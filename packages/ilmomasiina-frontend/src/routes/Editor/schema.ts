@@ -1,6 +1,6 @@
 import { z, ZodType } from "zod";
 
-import { MAX_OPTIONS_PER_QUESTION, QuestionType } from "@tietokilta/ilmomasiina-models";
+import { PaymentMode, MAX_OPTIONS_PER_QUESTION, QuestionType } from "@tietokilta/ilmomasiina-models";
 import { EditorEvent, EditorEventType } from "../../modules/editor/types";
 
 // The form validation should catch almost all error cases.
@@ -22,6 +22,12 @@ const questionOptionsSchema: ZodType<EditorEvent["questions"][number]["options"]
       });
     }
   });
+
+const priceSchema = z
+  .number({ invalid_type_error: "editor.errors.invalidPrice" })
+  .int({ message: "editor.errors.invalidPrice" })
+  .finite({ message: "editor.errors.invalidPrice" })
+  .nonnegative({ message: "editor.errors.negativePrice" });
 
 const editorSchema: ZodType<EditorEvent> = z
   .object({
@@ -50,6 +56,7 @@ const editorSchema: ZodType<EditorEvent> = z
     draft: z.boolean(),
     listed: z.boolean(),
     verificationEmail: z.nullable(z.string()),
+    payments: z.nativeEnum(PaymentMode),
     languages: z.record(
       z.string(),
       z.object({
@@ -80,6 +87,7 @@ const editorSchema: ZodType<EditorEvent> = z
         key: z.string(),
         title: z.string().min(1).max(255),
         size: z.nullable(z.number().min(1)),
+        price: priceSchema,
       }),
     ),
     questions: z.array(
@@ -91,9 +99,11 @@ const editorSchema: ZodType<EditorEvent> = z
         required: z.boolean(),
         public: z.boolean(),
         options: questionOptionsSchema,
+        prices: z.array(priceSchema).max(MAX_OPTIONS_PER_QUESTION),
+        hasPrices: z.boolean(),
       }),
     ),
-    moveSignupsToQueue: z.optional(z.boolean()),
+    moveSignupsToQueue: z.boolean(),
     updatedAt: z.string(),
   })
   .superRefine((event, ctx) => {

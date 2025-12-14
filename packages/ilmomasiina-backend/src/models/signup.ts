@@ -20,12 +20,13 @@ import {
   Sequelize,
 } from "sequelize";
 
-import { SignupStatus } from "@tietokilta/ilmomasiina-models";
+import { ProductSchema, SignupStatus } from "@tietokilta/ilmomasiina-models";
 import type { SignupAttributes } from "@tietokilta/ilmomasiina-models/dist/models";
 import config from "../config";
 import type { Answer } from "./answer";
 import type { Quota } from "./quota";
 import { generateRandomId, RANDOM_ID_LENGTH } from "./randomId";
+import { jsonColumnGetter } from "./util/json";
 
 export interface SignupCreationAttributes extends Optional<
   SignupAttributes,
@@ -38,6 +39,9 @@ export interface SignupCreationAttributes extends Optional<
   | "language"
   | "status"
   | "position"
+  | "price"
+  | "currency"
+  | "products"
   | "createdAt"
 > {}
 
@@ -51,6 +55,9 @@ export class Signup extends Model<SignupAttributes, SignupCreationAttributes> im
   public confirmedAt!: Date | null;
   public status!: SignupStatus | null;
   public position!: number | null;
+  public price!: number | null;
+  public currency!: string | null;
+  public products!: ProductSchema[] | null;
 
   public quotaId!: Quota["id"];
   public quota?: Quota;
@@ -137,6 +144,19 @@ export default function setupSignupModel(sequelize: Sequelize) {
       },
       position: {
         type: DataTypes.INTEGER,
+      },
+      price: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+      },
+      currency: {
+        type: DataTypes.STRING(8),
+        allowNull: true,
+      },
+      products: {
+        type: DataTypes.JSON,
+        allowNull: true,
+        get: jsonColumnGetter<ProductSchema[]>("products"),
       },
       // Add createdAt manually to support milliseconds
       createdAt: {

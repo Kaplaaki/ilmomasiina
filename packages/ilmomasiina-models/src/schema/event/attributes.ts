@@ -1,5 +1,6 @@
 import { Type } from "typebox";
 
+import { PaymentMode } from "../../enum";
 import { questionLanguage } from "../question";
 import { quotaLanguage } from "../quota";
 import { Nullable } from "../utils";
@@ -65,6 +66,9 @@ export const publicEventAttributes = Type.Object({
   }),
   emailQuestion: Type.Boolean({
     description: "Whether signups should contain an email field. Also enables confirmation emails.",
+  }),
+  payments: Type.Enum(PaymentMode, {
+    description: "Payment mode for the event.",
   }),
   defaultLanguage: Type.String({
     maxLength: 8,

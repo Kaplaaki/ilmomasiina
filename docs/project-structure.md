@@ -66,6 +66,29 @@ The project is divided into four packages. Source folders are listed under each,
 - In addition, the root folder has a `package.json`, which is used for ESLint and other development dependencies
   that are shared between the packages. That package contains no code.
 
+### Source of truth for models
+
+The source of truth for *database models* is currently split between:
+
+- `ilmomasiina-models/src/models` contains the TypeScript interfaces for the *database* rows.
+  - These will be moved into the below `ilmomasiina-backend` files in 3.0 as they serve no real purpose here.
+- `ilmomasiina-backend/src/models` contains the Sequelize model definitions that implement the interfaces from
+  `ilmomasiina-models/src/models`.
+  - Each of these files first (re)defines the attributes as `public attribute!: type;` members of the class, and then
+    defines a `setupFooModel` function that calls `Model.init(...)`. These must match
+  - Errors *ARE NOT* raised by TS if extra attributes are defined in the class body, or if the attribute *types* in
+    `Model.init` do not match.
+  - Errors *are* raised if attributes are missing from the class body, or if the attributes in `Model.init` do not
+    match the *names* defined in `ilmomasiina-models/src/models`.
+
+The source of truth for *API models* is in `ilmomasiina-models/src/schema`, which contains TypeBox schemas (and
+corresponding `Static<>` TypeScript types) that define requests and responses.
+
+- These schemas are used both by the backend to validate requests and format responses, and by the frontend
+  to define types for API responses.
+- The backend uses the `return foo as unknown as StringifyApi<typeof foo>` pattern to type-check that the returned
+  type from endpoints matches the schema when Dates are replaced by strings. (Other non-JSONable types are not used.)
+
 ## Technologies and design choices
 
 Many of the libraries listed below were inherited from the Athene version of the code and might be subject to change,

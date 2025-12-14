@@ -46,6 +46,14 @@ export const questionAttributes = Type.Object({
     description: "The type of answer expected.",
   }),
   options: questionOptions,
+  prices: Nullable(
+    Type.Array(
+      Type.Integer({ minimum: 0 }),
+      // Should match questionOptions.
+      { maxItems: 64 },
+    ),
+    { description: "For select or checkbox questions, the prices associated with each option in cents." },
+  ),
   required: Type.Boolean({
     description: "Whether to require an answer to this question from all attendees.",
   }),

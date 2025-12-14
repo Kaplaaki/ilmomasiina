@@ -2,9 +2,11 @@ import { testEvent, testSignups } from "test/testData";
 import { describe, expect, test } from "vitest";
 
 import { EDIT_TOKEN_HEADER, SignupForEditResponse } from "@tietokilta/ilmomasiina-models";
+import config from "../../src/config";
 import { Signup } from "../../src/models/signup";
 import { refreshSignupPositionsAndGet } from "../../src/routes/signups/computeSignupPosition";
 import { generateToken } from "../../src/routes/signups/editTokens";
+import { handleTestResponse } from "../requests";
 
 async function fetchSignupForEdit(signup: Signup, editToken?: string | false) {
   const headers: Record<string, string> = {};
@@ -16,7 +18,7 @@ async function fetchSignupForEdit(signup: Signup, editToken?: string | false) {
     url: `/api/signups/${signup.id}`,
     headers,
   });
-  return [response.json<SignupForEditResponse>(), response] as const;
+  return handleTestResponse<SignupForEditResponse>(response);
 }
 
 describe("getSignupForEdit", () => {
@@ -45,11 +47,15 @@ describe("getSignupForEdit", () => {
           id: quota.id,
           title: quota.title,
           size: quota.size,
+          price: quota.price,
         },
         position: null,
         status: null,
         confirmableForMillis: 0,
         editableForMillis: expect.any(Number),
+        price: expect.any(Number),
+        currency: config.currency,
+        products: expect.any(Array),
       },
     });
   });

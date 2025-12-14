@@ -1,4 +1,5 @@
 import { FastifyReply, FastifyRequest } from "fastify";
+import { sumBy } from "lodash";
 import { Op, Transaction } from "sequelize";
 import { isEmail } from "validator";
 
@@ -6,6 +7,7 @@ import type {
   AdminSignupCreateBody,
   AdminSignupSchema,
   AdminSignupUpdateBody,
+  ProductSchema,
   SignupID,
   SignupPathParams,
   SignupUpdateBody,
@@ -13,6 +15,7 @@ import type {
   SignupValidationErrors,
 } from "@tietokilta/ilmomasiina-models";
 import { AuditEvent, QuestionType, SignupFieldError } from "@tietokilta/ilmomasiina-models";
+import config from "../../config";
 import sendSignupConfirmationMail from "../../mail/signupConfirmation";
 import { getSequelize } from "../../models";
 import { Answer, AnswerCreationAttributes } from "../../models/answer";
@@ -25,6 +28,171 @@ import { refreshSignupPositions } from "./computeSignupPosition";
 import { signupEditable } from "./createNewSignup";
 import { NoSuchQuota, NoSuchSignup, SignupsClosed, SignupValidationError } from "./errors";
 
+/** Computes product lines for a given quota. */
+export function getQuotaProducts(quota: Quota): ProductSchema[] {
+  if (quota.price) {
+    return [
+      {
+        name: quota.title,
+        amount: 1,
+        unitPrice: quota.price,
+      },
+    ];
+  }
+  return [];
+}
+
+/**
+ * Validates the answers to all questions and computes product lines resulting from them.
+ *
+ * If `admin` is true, types are coerced to be correct instead of skipping the answer.
+ *
+ * If `admin` is false and `answerErrors` is returned, other returned values are not valid and should not be used.
+ */
+export function validateAnswersAndGetProducts(
+  event: Pick<Event, "questions" | "languages">,
+  rawAnswers: SignupUpdateBody["answers"] | undefined,
+  admin: boolean,
+) {
+  let answerErrors: Record<string, SignupFieldError> | undefined;
+  const answerProducts: ProductSchema[] = [];
+
+  const newAnswers = event.questions!.map((question, index) => {
+    // Fetch the answer to this question from the request body
+    let answer = rawAnswers?.find((a) => a.questionId === question.id)?.answer;
+    let error: SignupFieldError | undefined;
+
+    const validOptions: string[] = [];
+    const optionPrices = new Map<string, number>();
+
+    if (question.type === QuestionType.CHECKBOX || question.type === QuestionType.SELECT) {
+      // First, collect valid options and their prices from the default language
+      if (question.options) {
+        validOptions.push(...question.options);
+
+        if (question.prices) {
+          question.options.forEach((opt, i) => {
+            optionPrices.set(opt, question.prices![i] ?? 0);
+          });
+        }
+      }
+
+      // Then, collect valid options from other languages
+      for (const lang of Object.values(event.languages)) {
+        const localized = lang.questions[index];
+
+        if (localized && localized.options) {
+          // Only include non-empty options, since empty ones use the default language
+          const localizedOptions = localized.options.filter(Boolean);
+          validOptions.push(...localizedOptions);
+
+          if (question.prices) {
+            localized.options.forEach((opt, i) => {
+              optionPrices.set(opt, question.prices![i] ?? 0);
+            });
+          }
+        }
+      }
+    }
+
+    if (!answer || !answer.length) {
+      // Disallow empty answers to required questions
+      if (question.required) {
+        error = SignupFieldError.MISSING;
+      }
+      // Normalize empty answers to "" or [], depending on question type
+      answer = question.type === QuestionType.CHECKBOX ? [] : "";
+    } else if (question.type === QuestionType.CHECKBOX) {
+      // Forcibly convert to array in admin mode
+      if (admin) {
+        answer = !Array.isArray(answer) ? [answer] : answer;
+      }
+      // Ensure checkbox answers are arrays
+      if (!Array.isArray(answer)) {
+        error = SignupFieldError.WRONG_TYPE;
+      } else {
+        // Check that all checkbox answers are valid
+        for (const option of answer) {
+          if (!validOptions.includes(option)) {
+            error = SignupFieldError.NOT_AN_OPTION;
+          } else {
+            const price = optionPrices.get(option) ?? 0;
+            if (price) {
+              answerProducts.push({
+                name: option,
+                amount: 1,
+                unitPrice: price,
+              });
+            }
+          }
+        }
+      }
+    } else {
+      // Forcibly convert to string in admin mode
+      if (admin) {
+        answer = Array.isArray(answer) ? answer.join(", ") : String(answer);
+      }
+      // Don't allow arrays for non-checkbox questions
+      if (typeof answer !== "string") {
+        error = SignupFieldError.WRONG_TYPE;
+      } else {
+        switch (question.type) {
+          case QuestionType.TEXT:
+          case QuestionType.TEXT_AREA:
+            break;
+          case QuestionType.NUMBER:
+            // Check that a numeric answer is valid
+            if (!Number.isFinite(parseFloat(answer))) {
+              error = SignupFieldError.NOT_A_NUMBER;
+            }
+            // TODO: could have prices for number questions later
+            break;
+          case QuestionType.SELECT: {
+            // Check that the select answer is valid
+            if (!validOptions.includes(answer)) {
+              error = SignupFieldError.NOT_AN_OPTION;
+            } else {
+              const price = optionPrices.get(answer) ?? 0;
+              if (price) {
+                answerProducts.push({
+                  name: answer,
+                  amount: 1,
+                  unitPrice: price,
+                });
+              }
+            }
+            break;
+          }
+          default:
+            throw new Error("Invalid question type");
+        }
+      }
+    }
+
+    if (error) {
+      answerErrors ??= {};
+      answerErrors[question.id] = error;
+    }
+
+    return {
+      questionId: question.id,
+      answer,
+    };
+  });
+
+  return { newAnswers, answerProducts, answerErrors };
+}
+
+/** Given product lines, computes the final price-related attributes for a signup. */
+export function computePrice(products: ProductSchema[]): Partial<Signup> {
+  return {
+    products,
+    price: sumBy(products, (prod) => prod.unitPrice * prod.amount),
+    currency: config.currency,
+  };
+}
+
+/** Internal function to fetch all data required for updating a signup. */
 async function getSignupAndEventForUpdate(id: SignupID, transaction: Transaction) {
   // Retrieve event data and lock the row for editing
   const signup = await Signup.scope("active").findByPk(id, {
@@ -35,7 +203,7 @@ async function getSignupAndEventForUpdate(id: SignupID, transaction: Transaction
     throw new NoSuchSignup("Signup expired or already deleted");
   }
 
-  const quota = await signup.getQuota({
+  signup.quota = await signup.getQuota({
     include: [
       {
         model: Event,
@@ -48,7 +216,7 @@ async function getSignupAndEventForUpdate(id: SignupID, transaction: Transaction
     ],
     transaction,
   });
-  const event = quota.event!;
+  const event = signup.quota.event!;
 
   return { signup, event };
 }
@@ -57,13 +225,21 @@ async function getSignupAndEventForUpdate(id: SignupID, transaction: Transaction
 async function updateExistingSignup(
   signup: Signup,
   fields: Partial<Signup>,
-  answers: AnswerCreationAttributes[],
+  answers: Omit<AnswerCreationAttributes, "signupId">[],
+  answerProducts: ProductSchema[],
   transaction: Transaction,
 ) {
+  // Get possible product line for the quota
+  const quotaProducts = getQuotaProducts(signup.quota!);
+  const products = [...quotaProducts, ...answerProducts];
+
   // Update fields for the signup
   await signup.update(
     {
       ...fields,
+      // Compute final total price for the signup
+      ...computePrice(products),
+      // Mark the signup as confirmed
       confirmedAt: new Date(),
     },
     { transaction },
@@ -79,8 +255,11 @@ async function updateExistingSignup(
     },
     transaction,
   });
-  // eslint-disable-next-line no-param-reassign -- signup.update() is already modifying signup
-  signup.answers = await Answer.bulkCreate(answers, { transaction });
+  // eslint-disable-next-line no-param-reassign -- signup.update() is already modifying the signup
+  signup.answers = await Answer.bulkCreate(
+    answers.map((answer) => ({ ...answer, signupId: signup.id })),
+    { transaction },
+  );
 }
 
 /** Requires editTokenVerification and validates answers thoroughly */
@@ -97,7 +276,6 @@ export async function updateSignupAsUser(
 
     /** Is this signup already confirmed (i.e. is this the first update for this signup) */
     const notConfirmedYet = !signup.confirmedAt;
-    const questions = event.questions!;
 
     // Collect fields to update on signup itself (name and email only editable on first confirmation)
     const fields: Partial<Signup> = {};
@@ -140,93 +318,25 @@ export async function updateSignupAsUser(
       fields.language = request.body.language;
     }
 
-    // Check that all questions are answered with a valid answer
-    const newAnswers = questions.map((question, index) => {
-      // Fetch the answer to this question from the request body
-      let answer = request.body.answers?.find((a) => a.questionId === question.id)?.answer;
-      let error: SignupFieldError | undefined;
-
-      // Collect valid options from all languages, if applicable
-      const validOptions = question.options ?? [];
-      if (question.type === QuestionType.CHECKBOX || question.type === QuestionType.SELECT) {
-        for (const lang of Object.values(event.languages)) {
-          const localized = lang.questions[index];
-          if (localized && localized.options) {
-            // Only include non-empty options, since empty ones use the default language
-            validOptions.push(...localized.options.filter(Boolean));
-          }
-        }
-      }
-
-      if (!answer || !answer.length) {
-        // Disallow empty answers to required questions
-        if (question.required) {
-          error = SignupFieldError.MISSING;
-        }
-        // Normalize empty answers to "" or [], depending on question type
-        answer = question.type === QuestionType.CHECKBOX ? [] : "";
-      } else if (question.type === QuestionType.CHECKBOX) {
-        // Ensure checkbox answers are arrays
-        if (!Array.isArray(answer)) {
-          error = SignupFieldError.WRONG_TYPE;
-        } else {
-          // Check that all checkbox answers are valid
-          answer.forEach((option) => {
-            if (!validOptions.includes(option)) {
-              error = SignupFieldError.NOT_AN_OPTION;
-            }
-          });
-        }
-      } else {
-        // Don't allow arrays for non-checkbox questions
-        if (typeof answer !== "string") {
-          error = SignupFieldError.WRONG_TYPE;
-        } else {
-          switch (question.type) {
-            case QuestionType.TEXT:
-            case QuestionType.TEXT_AREA:
-              break;
-            case QuestionType.NUMBER:
-              // Check that a numeric answer is valid
-              if (!Number.isFinite(parseFloat(answer))) {
-                error = SignupFieldError.NOT_A_NUMBER;
-              }
-              break;
-            case QuestionType.SELECT: {
-              // Check that the select answer is valid
-              if (!validOptions.includes(answer)) {
-                error = SignupFieldError.NOT_AN_OPTION;
-              }
-              break;
-            }
-            default:
-              throw new Error("Invalid question type");
-          }
-        }
-      }
-
-      if (error) {
-        errors.answers ??= {};
-        errors.answers[question.id] = error;
-      }
-
-      return {
-        questionId: question.id,
-        answer,
-        signupId: signup.id,
-      };
-    });
+    // Validate answers and compute products from them
+    const { newAnswers, answerProducts, answerErrors } = validateAnswersAndGetProducts(
+      event,
+      request.body.answers,
+      false,
+    );
+    if (answerErrors) errors.answers = answerErrors;
 
     if (Object.keys(errors).length > 0) {
       throw new SignupValidationError("Errors validating signup", errors);
     }
 
-    await updateExistingSignup(signup, fields, newAnswers, transaction);
+    await updateExistingSignup(signup, fields, newAnswers, answerProducts, transaction);
     await request.logEvent(AuditEvent.EDIT_SIGNUP, { signup, event, transaction });
     return { updatedSignup: signup, edited: !notConfirmedYet };
   });
 
-  // Send the confirmation email
+  // Send the confirmation email.
+  // Intentionally not awaited, as we don't want to delay the response for an API call.
   sendSignupConfirmationMail(updatedSignup, edited ? "edit" : "signup", false);
 
   reply.status(200);
@@ -251,28 +361,11 @@ async function updateExistingSignupAsAdmin(
   if (body.email != null) fields.email = body.email;
   if (body.language != null) fields.language = body.language;
 
-  // Normalize answer types and only keep ones to existing questions
-  const newAnswers = event.questions!.map((question) => {
-    // Fetch the answer to this question from the request body
-    let answer = body.answers?.find((a) => a.questionId === question.id)?.answer;
-    if (!answer || !answer.length) {
-      // Normalize empty answers to "" or [], depending on question type
-      answer = question.type === QuestionType.CHECKBOX ? [] : "";
-    } else if (question.type === QuestionType.CHECKBOX) {
-      // Forcibly convert checkbox answers to array
-      answer = !Array.isArray(answer) ? [answer] : answer;
-    } else {
-      // Forcibly convert non-checkbox answers to string
-      answer = Array.isArray(answer) ? answer.join(", ") : answer;
-    }
-    return {
-      questionId: question.id,
-      answer,
-      signupId: signup.id,
-    };
-  });
+  // Normalize answer types (string vs array) and only keep answers to existing questions.
+  // Ignore all other validation.
+  const { newAnswers, answerProducts } = validateAnswersAndGetProducts(event, body.answers, true);
 
-  await updateExistingSignup(signup, fields, newAnswers, transaction);
+  await updateExistingSignup(signup, fields, newAnswers, answerProducts, transaction);
 }
 
 export async function updateSignupAsAdmin(

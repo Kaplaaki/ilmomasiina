@@ -6,10 +6,12 @@ import { useNavigate } from "react-router";
 import { toast } from "react-toastify";
 
 import { ApiError, beginSignup, errorDesc, useSingleEventContext } from "@tietokilta/ilmomasiina-client";
+import { eventHasPaidQuotas } from "@tietokilta/ilmomasiina-client/dist/utils/paymentUtils";
 import { SignupState, signupState } from "@tietokilta/ilmomasiina-client/dist/utils/signupState";
 import type { QuotaID } from "@tietokilta/ilmomasiina-models";
 import type { TKey } from "../../../i18n";
 import paths from "../../../paths";
+import { usePriceFormatter } from "../../../utils/priceFormat";
 import { useSignupStateText } from "../../../utils/signupStateText";
 
 // Show the countdown one minute before opening the signup.
@@ -23,13 +25,15 @@ type SignupButtonProps = {
 };
 
 const SignupButton = ({ isOpen, isClosed, seconds, total }: SignupButtonProps) => {
-  const { registrationStartDate, registrationEndDate, quotas } = useSingleEventContext().localizedEvent!;
-  const { preview } = useSingleEventContext();
+  const { localizedEvent: event, preview } = useSingleEventContext();
+  const { registrationStartDate, registrationEndDate, quotas } = event!;
   const navigate = useNavigate();
   const eventState = signupState(registrationStartDate, registrationEndDate);
   const [submitting, setSubmitting] = useState(false);
   const isOnly = quotas.length === 1;
+  const showPrices = eventHasPaidQuotas(event!);
   const { t } = useTranslation();
+  const priceFormat = usePriceFormatter();
 
   const onClick = useCallback(
     async (quotaId: QuotaID) => {
@@ -84,6 +88,7 @@ const SignupButton = ({ isOpen, isClosed, seconds, total }: SignupButtonProps) =
               {isOnly
                 ? t("singleEvent.signupButton.singleQuota")
                 : t("singleEvent.signupButton", { quota: quota.title })}
+              {showPrices && ` (${priceFormat(quota.price)})`}
             </Button>
           ))
         )

@@ -1,13 +1,14 @@
 import { sortBy } from "lodash";
 import { describe, expect, test } from "vitest";
 
-import { EventListQuery, UserEventListResponse, UserEventResponse } from "@tietokilta/ilmomasiina-models";
+import { EventListQuery, PaymentMode, UserEventListResponse, UserEventResponse } from "@tietokilta/ilmomasiina-models";
 import { Event } from "../../src/models/event";
+import { handleTestResponse } from "../requests";
 import { fetchSignups, testEvent, testSignups } from "../testData";
 
 async function fetchUserEventList(query?: EventListQuery) {
   const response = await server.inject({ method: "GET", url: "/api/events", query: query as Record<string, string> });
-  return [response.json<UserEventListResponse>(), response] as const;
+  return handleTestResponse<UserEventListResponse>(response);
 }
 
 async function fetchUserEventDetails(event: Event) {
@@ -15,12 +16,13 @@ async function fetchUserEventDetails(event: Event) {
     method: "GET",
     url: `/api/events/${event.slug}`,
   });
-  return [response.json<UserEventResponse>(), response] as const;
+  return handleTestResponse<UserEventResponse>(response);
 }
 
 describe("GET /api/events/:id", () => {
   test("returns event information", async () => {
-    const event = await testEvent();
+    // Enable payments to not scrub any fields when saving
+    const event = await testEvent({}, { payments: PaymentMode.ONLINE });
     const [data, response] = await fetchUserEventDetails(event);
 
     expect(response.statusCode).toBe(200);
@@ -44,6 +46,7 @@ describe("GET /api/events/:id", () => {
       nameQuestion: event.nameQuestion,
       emailQuestion: event.emailQuestion,
       registrationClosed: false,
+      payments: event.payments,
       questions: expect.any(Array),
       quotas: expect.any(Array),
       defaultLanguage: event.defaultLanguage,
@@ -57,6 +60,7 @@ describe("GET /api/events/:id", () => {
       question: firstQuestion.question,
       type: firstQuestion.type,
       options: firstQuestion.options,
+      prices: firstQuestion.prices,
       required: firstQuestion.required,
       public: firstQuestion.public,
     });
@@ -66,6 +70,7 @@ describe("GET /api/events/:id", () => {
       id: firstQuota.id,
       title: firstQuota.title,
       size: firstQuota.size,
+      price: firstQuota.price,
       signupCount: 0,
       signups: [],
     });
@@ -243,7 +248,8 @@ describe("GET /api/events/:id", () => {
 
 describe("GET /api/events", () => {
   test("returns event information", async () => {
-    const event = await testEvent();
+    // Enable payments to not scrub any fields when saving
+    const event = await testEvent({}, { payments: PaymentMode.MANUAL });
     const [data, response] = await fetchUserEventList();
 
     expect(response.statusCode).toBe(200);
@@ -268,6 +274,7 @@ describe("GET /api/events", () => {
       signupsPublic: event.signupsPublic,
       nameQuestion: event.nameQuestion,
       emailQuestion: event.emailQuestion,
+      payments: event.payments,
       defaultLanguage: event.defaultLanguage,
       languages: expect.any(Object),
       quotas: expect.any(Array),
@@ -278,6 +285,7 @@ describe("GET /api/events", () => {
       id: firstQuota.id,
       title: firstQuota.title,
       size: firstQuota.size,
+      price: firstQuota.price,
       signupCount: 0,
     });
   });

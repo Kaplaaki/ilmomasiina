@@ -9,6 +9,7 @@ import {
   AuditEvent,
   EventCreateBody,
   EventUpdateBody,
+  PaymentMode,
   QuestionType,
 } from "@tietokilta/ilmomasiina-models";
 import { AuditLog } from "../../src/models/auditlog";
@@ -16,7 +17,15 @@ import { Event } from "../../src/models/event";
 import { Question } from "../../src/models/question";
 import { Quota } from "../../src/models/quota";
 import { toDate } from "../../src/routes/utils";
-import { fetchSignups, testEvent, testEventAttributes, testQuestionOptions, testSignups } from "../testData";
+import { handleTestResponse } from "../requests";
+import {
+  fetchSignups,
+  testEvent,
+  testEventAttributes,
+  testQuestionOptions,
+  testQuestionPrices,
+  testSignups,
+} from "../testData";
 
 async function fetchAdminEventList() {
   const response = await server.inject({
@@ -24,7 +33,7 @@ async function fetchAdminEventList() {
     url: "/api/admin/events",
     headers: { authorization: adminToken },
   });
-  return [response.json<AdminEventListResponse>(), response] as const;
+  return handleTestResponse<AdminEventListResponse>(response);
 }
 
 async function fetchAdminEventDetails(event: Pick<Event, "id">) {
@@ -33,7 +42,7 @@ async function fetchAdminEventDetails(event: Pick<Event, "id">) {
     url: `/api/admin/events/${event.id}`,
     headers: { authorization: adminToken },
   });
-  return [response.json<AdminEventResponse>(), response] as const;
+  return handleTestResponse<AdminEventResponse>(response);
 }
 
 async function createEvent(body: EventCreateBody) {
@@ -43,7 +52,7 @@ async function createEvent(body: EventCreateBody) {
     body,
     headers: { authorization: adminToken },
   });
-  return [response.json<AdminEventResponse>(), response] as const;
+  return handleTestResponse<AdminEventResponse>(response);
 }
 
 async function updateEvent(event: Pick<Event, "id">, body: EventUpdateBody) {
@@ -53,7 +62,7 @@ async function updateEvent(event: Pick<Event, "id">, body: EventUpdateBody) {
     body,
     headers: { authorization: adminToken },
   });
-  return [response.json<AdminEventResponse>(), response] as const;
+  return handleTestResponse<AdminEventResponse>(response);
 }
 
 async function deleteEvent(event: Pick<Event, "id">) {
@@ -67,7 +76,8 @@ async function deleteEvent(event: Pick<Event, "id">) {
 
 describe("GET /api/admin/events/:id", () => {
   test("returns event information", async () => {
-    const event = await testEvent();
+    // Enable payments to not scrub any fields when saving
+    const event = await testEvent({}, { payments: PaymentMode.ONLINE });
     const [data, response] = await fetchAdminEventDetails(event);
 
     expect(response.statusCode).toBe(200);
@@ -93,6 +103,7 @@ describe("GET /api/admin/events/:id", () => {
       nameQuestion: event.nameQuestion,
       emailQuestion: event.emailQuestion,
       verificationEmail: event.verificationEmail,
+      payments: event.payments,
       questions: expect.any(Array),
       quotas: expect.any(Array),
       defaultLanguage: event.defaultLanguage,
@@ -106,6 +117,7 @@ describe("GET /api/admin/events/:id", () => {
       question: firstQuestion.question,
       type: firstQuestion.type,
       options: firstQuestion.options,
+      prices: firstQuestion.prices,
       required: firstQuestion.required,
       public: firstQuestion.public,
     });
@@ -115,6 +127,7 @@ describe("GET /api/admin/events/:id", () => {
       id: firstQuota.id,
       title: firstQuota.title,
       size: firstQuota.size,
+      price: firstQuota.price,
       signupCount: 0,
       signups: [],
     });
@@ -196,6 +209,8 @@ describe("GET /api/admin/events/:id", () => {
         namePublic: firstSignup.namePublic,
         createdAt: firstSignup.createdAt.toISOString(),
         answers: expect.any(Array),
+        price: firstSignup.price,
+        currency: firstSignup.currency,
         status: null,
         position: null,
       });
@@ -213,7 +228,8 @@ describe("GET /api/admin/events/:id", () => {
 
 describe("GET /api/admin/events", () => {
   test("returns event information", async () => {
-    const event = await testEvent();
+    // Enable payments to not scrub any fields when saving
+    const event = await testEvent({}, { payments: PaymentMode.MANUAL });
     const [data, response] = await fetchAdminEventList();
 
     expect(response.statusCode).toBe(200);
@@ -240,6 +256,7 @@ describe("GET /api/admin/events", () => {
       signupsPublic: event.signupsPublic,
       nameQuestion: event.nameQuestion,
       emailQuestion: event.emailQuestion,
+      payments: event.payments,
       quotas: expect.any(Array),
       defaultLanguage: event.defaultLanguage,
     });
@@ -249,6 +266,7 @@ describe("GET /api/admin/events", () => {
       id: firstQuota.id,
       title: firstQuota.title,
       size: firstQuota.size,
+      price: firstQuota.price,
       signupCount: 0,
     });
   });
@@ -305,6 +323,7 @@ function eventBody(): EventCreateBody {
 
 describe("POST /api/admin/events", () => {
   test("creates events", async () => {
+    const options = [testQuestionOptions(), testQuestionOptions()];
     const postBody: EventCreateBody = {
       ...eventBody(),
       questions: [
@@ -314,6 +333,7 @@ describe("POST /api/admin/events", () => {
           required: true,
           public: false,
           options: null,
+          prices: null,
         },
         {
           type: QuestionType.TEXT_AREA,
@@ -321,6 +341,7 @@ describe("POST /api/admin/events", () => {
           required: true,
           public: true,
           options: null,
+          prices: null,
         },
         {
           type: QuestionType.NUMBER,
@@ -328,26 +349,30 @@ describe("POST /api/admin/events", () => {
           required: false,
           public: true,
           options: null,
+          prices: null,
         },
         {
           type: QuestionType.SELECT,
           question: faker.lorem.words({ min: 1, max: 5 }),
           required: false,
           public: false,
-          options: testQuestionOptions(),
+          options: options[0],
+          prices: testQuestionPrices(options[0].length),
         },
         {
           type: QuestionType.CHECKBOX,
           question: faker.lorem.words({ min: 1, max: 5 }),
           required: true,
           public: true,
-          options: testQuestionOptions(),
+          options: options[1],
+          prices: testQuestionPrices(options[1].length),
         },
       ],
       quotas: faker.helpers.multiple(
         () => ({
           title: faker.lorem.words({ min: 1, max: 3 }),
           size: faker.number.int({ min: 10, max: 50 }),
+          price: faker.number.int({ min: 0, max: 10000 }),
         }),
         { count: 2 },
       ),
@@ -386,6 +411,7 @@ describe("POST /api/admin/events", () => {
       expect(found).toBeTruthy();
       expect(found!.size).toBe(postQuota.size);
       expect(found!.order).toBe(index);
+      expect(found!.price).toBe(postQuota.price);
     });
 
     expect(event!.questions!.length).toBe(createBody.questions.length);
@@ -397,6 +423,7 @@ describe("POST /api/admin/events", () => {
       expect(found!.required).toBe(postQuestion.required);
       expect(found!.public).toBe(postQuestion.public);
       expect(found!.options).toEqual(postQuestion.options);
+      expect(found!.prices).toEqual(postQuestion.prices);
       expect(found!.order).toBe(index);
     });
 
@@ -514,8 +541,9 @@ describe("POST /api/admin/events", () => {
     expect(await Event.count()).toBe(0);
   });
 
-  test("drops options on non-option questions", async () => {
+  test("normalizes options and prices to null when applicable", async () => {
     const options = testQuestionOptions();
+    const prices = testQuestionPrices(options.length);
     const localizedOptions = options.map((option) => option.toUpperCase());
     const postBody: EventCreateBody = {
       ...eventBody(),
@@ -526,6 +554,7 @@ describe("POST /api/admin/events", () => {
           required: true,
           public: false,
           options,
+          prices,
         },
         {
           type: QuestionType.SELECT,
@@ -533,6 +562,31 @@ describe("POST /api/admin/events", () => {
           required: true,
           public: false,
           options,
+          prices,
+        },
+        {
+          type: QuestionType.CHECKBOX,
+          question: faker.lorem.words({ min: 1, max: 5 }),
+          required: true,
+          public: false,
+          options: null,
+          prices,
+        },
+        {
+          type: QuestionType.CHECKBOX,
+          question: faker.lorem.words({ min: 1, max: 5 }),
+          required: true,
+          public: false,
+          options: [],
+          prices,
+        },
+        {
+          type: QuestionType.CHECKBOX,
+          question: faker.lorem.words({ min: 1, max: 5 }),
+          required: true,
+          public: false,
+          options,
+          prices: prices.map(() => 0),
         },
       ],
       languages: {
@@ -553,6 +607,18 @@ describe("POST /api/admin/events", () => {
               question: "",
               options: localizedOptions,
             },
+            {
+              question: "",
+              options: null,
+            },
+            {
+              question: "",
+              options: [],
+            },
+            {
+              question: "",
+              options: localizedOptions,
+            },
           ],
           verificationEmail: "",
         },
@@ -565,15 +631,35 @@ describe("POST /api/admin/events", () => {
 
     const event = await Event.findByPk(createBody.id, { include: [Question, Quota] });
 
-    expect(event!.questions).toHaveLength(2);
+    expect(event!.questions).toHaveLength(5);
+    // type: TEXT always has options: null + prices: null
     expect(event!.questions![0].type).toBe(QuestionType.TEXT);
     expect(event!.questions![0].options).toBe(null);
+    expect(event!.questions![0].prices).toBe(null);
+    // options and prices are kept as-is
     expect(event!.questions![1].type).toBe(QuestionType.SELECT);
     expect(event!.questions![1].options).toEqual(options);
+    expect(event!.questions![1].prices).toEqual(prices);
+    // options: null normalizes to options: null + prices: null
+    expect(event!.questions![2].type).toBe(QuestionType.CHECKBOX);
+    expect(event!.questions![2].options).toEqual(null);
+    expect(event!.questions![2].prices).toEqual(null);
+    // options: [] normalizes to options: null + prices: null
+    expect(event!.questions![3].type).toBe(QuestionType.CHECKBOX);
+    expect(event!.questions![3].options).toEqual(null);
+    expect(event!.questions![3].prices).toEqual(null);
+    // prices: [0, 0, ...] normalizes to prices: null
+    expect(event!.questions![4].type).toBe(QuestionType.CHECKBOX);
+    expect(event!.questions![4].options).toEqual(options);
+    expect(event!.questions![4].prices).toEqual(null);
+    // languages options normalization
     expect(event!.languages.fi).toBeTruthy();
-    expect(event!.languages.fi.questions).toHaveLength(2);
+    expect(event!.languages.fi.questions).toHaveLength(5);
     expect(event!.languages.fi.questions![0].options).toBe(null);
     expect(event!.languages.fi.questions![1].options).toEqual(localizedOptions);
+    expect(event!.languages.fi.questions![2].options).toBe(null);
+    expect(event!.languages.fi.questions![3].options).toBe(null);
+    expect(event!.languages.fi.questions![4].options).toEqual(localizedOptions);
   });
 
   test("audit logs creations", async () => {
@@ -699,6 +785,8 @@ describe("PATCH /api/admin/events/:id", () => {
     const [after] = await fetchAdminEventDetails(event);
     expect(after).toEqual(before);
   });
+
+  // TODO: test question options normalization
 
   test("does not allow duplicate slugs", async () => {
     const event1 = await testEvent();

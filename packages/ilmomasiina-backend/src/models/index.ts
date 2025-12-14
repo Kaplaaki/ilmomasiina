@@ -50,11 +50,11 @@ export default async function setupDatabase() {
   sequelize = new Sequelize(sequelizeConfig.default);
   try {
     await sequelize.authenticate();
-    const cfg = (sequelize.connectionManager as any).config;
-    debugLog(`Connected to ${cfg.host} as ${cfg.username}.`);
+    const cfg = sequelize.config;
+    debugLog(`Connected to ${cfg.host}:${cfg.port} as ${cfg.username}.`);
   } catch (err) {
-    const cfg = (sequelize.connectionManager as any).config;
-    console.error(`Error connecting to ${cfg.host} as ${cfg.username}: ${err}`);
+    const cfg = sequelize.config;
+    console.error(`Error connecting to ${cfg.host}:${cfg.port} as ${cfg.username}: ${err}`);
     throw err;
   }
 

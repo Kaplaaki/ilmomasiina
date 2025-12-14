@@ -1,3 +1,4 @@
+import type { PaymentMode } from "../enum";
 import type { QuestionLanguage, QuotaLanguage } from "../schema";
 
 interface EventPerLanguageAttributes {
@@ -29,6 +30,7 @@ export default interface EventAttributes extends EventPerLanguageAttributes {
   signupsPublic: boolean;
   nameQuestion: boolean;
   emailQuestion: boolean;
+  payments: PaymentMode;
   languages: Record<string, EventLanguage>;
   defaultLanguage: string;
   updatedAt: Date;

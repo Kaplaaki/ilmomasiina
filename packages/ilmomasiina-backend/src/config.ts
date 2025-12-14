@@ -156,6 +156,9 @@ const config = {
   hideEventAfterDays: envInteger("HIDE_EVENT_AFTER_DAYS", 180),
   /** How long items stay in the database after deletion, in order to allow restoring accidentally deleted items. */
   deletionGracePeriod: envInteger("DELETION_GRACE_PERIOD_DAYS", 14),
+
+  /** The currency used for payments. */
+  currency: envString("CURRENCY", "EUR"),
 } as const;
 
 if (!process.env.PORT && config.nodeEnv === "production") {
