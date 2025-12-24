@@ -99,12 +99,24 @@ export default async function setupDatabase() {
     onDelete: "CASCADE",
   });
   Answer.belongsTo(Signup);
-  Payment.belongsTo(Signup);
+
   Signup.hasMany(Payment, {
     foreignKey: {
       allowNull: false,
     },
-    onDelete: "CASCADE",
+    // TODO: How should we handle signup deletion when payments exist?
+    onUpdate: "RESTRICT",
+    onDelete: "RESTRICT",
+  });
+  Payment.belongsTo(Signup);
+  Signup.belongsTo(Payment, {
+    as: "activePayment",
+    foreignKey: {
+      allowNull: true,
+    },
+    // Deleting/renumbering payments is not allowed anyway, but this shouldn't hurt.
+    onUpdate: "RESTRICT",
+    onDelete: "RESTRICT",
   });
 
   Question.hasMany(Answer, {

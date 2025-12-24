@@ -1,6 +1,6 @@
 import { Type } from "typebox";
 
-import { SignupStatus } from "../../enum";
+import { PaymentStatus, SignupStatus } from "../../enum";
 import { productSchema } from "../product";
 import { questionID } from "../question/attributes";
 import { Nullable } from "../utils";
@@ -101,6 +101,9 @@ export const adminDynamicSignupAttributes = Type.Interface([publicDynamicSignupA
   }),
   currency: Nullable(Type.String({ maxLength: 8 }), {
     description: "The currency in which the price is denominated.",
+  }),
+  paymentStatus: Nullable(Type.Enum(PaymentStatus), {
+    description: "Status of the payment for the signup, if applicable.",
   }),
 });
 

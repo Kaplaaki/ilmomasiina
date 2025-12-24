@@ -1,5 +1,6 @@
 import type { SignupStatus } from "../enum";
 import type { ProductSchema } from "../schema/product";
+import type PaymentAttributes from "./payment";
 import type QuotaAttributes from "./quota";
 
 export default interface SignupAttributes {
@@ -20,4 +21,5 @@ export default interface SignupAttributes {
   products: ProductSchema[] | null;
   createdAt: Date;
   quotaId: QuotaAttributes["id"];
+  activePaymentId: PaymentAttributes["id"] | null;
 }

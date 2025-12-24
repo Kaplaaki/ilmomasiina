@@ -1,13 +1,15 @@
 import type { PaymentStatus } from "../enum";
 
 export default interface PaymentAttributes {
-  stripeId: string;
+  id: number;
   signupId: string;
-  editToken: string;
+  stripeCheckoutSessionId: string | null;
+  status: PaymentStatus;
   amount: number;
+  currency: string;
+  products: unknown; // TODO
   createdAt: Date;
   updatedAt: Date;
   expiresAt: Date;
   completedAt: Date | null;
-  status: PaymentStatus | null;
 }

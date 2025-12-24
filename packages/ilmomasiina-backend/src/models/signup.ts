@@ -1,5 +1,8 @@
 import moment from "moment";
 import {
+  BelongsToCreateAssociationMixin,
+  BelongsToGetAssociationMixin,
+  BelongsToSetAssociationMixin,
   DataTypes,
   HasManyAddAssociationMixin,
   HasManyAddAssociationsMixin,
@@ -24,6 +27,7 @@ import { ProductSchema, SignupStatus } from "@tietokilta/ilmomasiina-models";
 import type { SignupAttributes } from "@tietokilta/ilmomasiina-models/dist/models";
 import config from "../config";
 import type { Answer } from "./answer";
+import type { Payment } from "./payment";
 import type { Quota } from "./quota";
 import { generateRandomId, RANDOM_ID_LENGTH } from "./randomId";
 import { jsonColumnGetter } from "./util/json";
@@ -42,6 +46,7 @@ export interface SignupCreationAttributes extends Optional<
   | "price"
   | "currency"
   | "products"
+  | "activePaymentId"
   | "createdAt"
 > {}
 
@@ -76,6 +81,14 @@ export class Signup extends Model<SignupAttributes, SignupCreationAttributes> im
   public removeAnswer!: HasManyRemoveAssociationMixin<Answer, Answer["id"]>;
   public removeAnswers!: HasManyRemoveAssociationsMixin<Answer, Answer["id"]>;
   public createAnswer!: HasManyCreateAssociationMixin<Answer>;
+
+  // TODO: This is a bit of a hack to ensure active payments are unique within MySQL via locking.
+  //  Once we migrate to Postgres-only, we might use a partial UNIQUE index on Payments instead.
+  public activePaymentId!: Payment["id"] | null;
+  public activePayment?: Payment;
+  public getActivePayment!: BelongsToGetAssociationMixin<Payment>;
+  public setActivePayment!: BelongsToSetAssociationMixin<Payment, Payment["id"]>;
+  public createActivePayment!: BelongsToCreateAssociationMixin<Payment>;
 
   public readonly createdAt!: Date;
   public readonly updatedAt!: Date;
@@ -157,6 +170,10 @@ export default function setupSignupModel(sequelize: Sequelize) {
         type: DataTypes.JSON,
         allowNull: true,
         get: jsonColumnGetter<ProductSchema[]>("products"),
+      },
+      activePaymentId: {
+        type: DataTypes.INTEGER.UNSIGNED,
+        allowNull: true,
       },
       // Add createdAt manually to support milliseconds
       createdAt: {

@@ -5,6 +5,20 @@ export enum SignupStatus {
   IN_QUEUE = "in-queue",
 }
 
+/** Possible payment statuses. */
+export enum PaymentStatus {
+  /** The payment is being created in the payment processor. */
+  CREATING = "creating",
+  /** The payment has been created and is pending confirmation. */
+  PENDING = "pending",
+  /** The payment has been successfully completed. */
+  PAID = "paid",
+  /** The payment has been canceled. */
+  CANCELED = "canceled",
+  /** Creating the payment in the payment processor has failed. */
+  CREATION_FAILED = "creation_failed",
+}
+
 /** Possible question types. */
 export enum QuestionType {
   TEXT = "text",
