@@ -266,6 +266,8 @@
     "editor.signups.column.status.in-open": "Open",
     "editor.signups.column.status.in-queue": "Queue",
     "editor.signups.column.time": "Signup time",
+    "editor.signups.column.price": "Price",
+    "editor.signups.column.currency": "Currency",
     "editor.signups.column.actions": "Actions",
     "editor.signups.action.edit": "Edit",
     "editor.signups.action.delete": "Delete",

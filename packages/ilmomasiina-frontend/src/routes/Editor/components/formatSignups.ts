@@ -6,7 +6,7 @@ import { useTranslation } from "react-i18next";
 
 import { getSignupsAsList, stringifyAnswer } from "@tietokilta/ilmomasiina-client/dist/utils/signupUtils";
 import type { AdminEventResponse, AdminSignupSchema, QuestionID } from "@tietokilta/ilmomasiina-models";
-import { SignupStatus } from "@tietokilta/ilmomasiina-models";
+import { PaymentMode, SignupStatus } from "@tietokilta/ilmomasiina-models";
 import type { AdminQuotaSignups, AdminSignupWithQuota } from "../../../modules/editor/types";
 
 export function getAnswersFromSignup(event: AdminEventResponse, signup: AdminSignupSchema) {
@@ -89,6 +89,9 @@ export function useConvertSignupsToCSV(
         t("editor.signups.column.quota"),
         ...event.questions.map(({ question }) => question),
         t("editor.signups.column.time"),
+        ...(event.payments !== PaymentMode.DISABLED
+          ? [t("editor.signups.column.price"), t("editor.signups.column.currency")]
+          : []),
       ],
       // Data rows
       ...signups.map((signup) => {
@@ -103,6 +106,9 @@ export function useConvertSignupsToCSV(
           `${signup.quota.title}${signupStatus}`,
           ...event.questions.map((question) => stringifyAnswer(answerMap[question.id])),
           dateFormat.format(new Date(signup.createdAt)),
+          ...(event.payments !== PaymentMode.DISABLED
+            ? [signup.price != null ? (signup.price / 100).toFixed(2) : "", signup.currency || ""]
+            : []),
         ];
       }),
     ];

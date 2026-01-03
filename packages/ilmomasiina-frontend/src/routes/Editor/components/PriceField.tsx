@@ -32,16 +32,16 @@ export const priceFieldConfig: UseFieldConfig<number | null> = {
 /** The field config for price fields using the given currency and current locale. */
 export default function PriceField({ value, onChange, onBlur, ...props }: FieldInputProps<number | null>) {
   const { t } = useTranslation();
-
+  const locale = t("currencyFormat.locale");
   const formatter = useMemo(
     () =>
-      new Intl.NumberFormat(t("currencyFormat.locale"), {
+      new Intl.NumberFormat(locale, {
         style: "currency",
         currency: CURRENCY,
         minimumFractionDigits: 2,
         maximumFractionDigits: 2,
       }),
-    [t],
+    [locale],
   );
 
   const [localValue, setLocalValue] = useState(

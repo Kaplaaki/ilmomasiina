@@ -266,6 +266,8 @@
     "editor.signups.column.status.in-open": "Avoin",
     "editor.signups.column.status.in-queue": "Jonossa",
     "editor.signups.column.time": "Ilmoittautumisaika",
+    "editor.signups.column.price": "Hinta",
+    "editor.signups.column.currency": "Valuutta",
     "editor.signups.column.actions": "Toiminnot",
     "editor.signups.action.edit": "Muokkaa",
     "editor.signups.action.delete": "Poista",
