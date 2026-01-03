@@ -116,8 +116,10 @@ export function validateAnswersAndGetProducts(
           if (!validOptions.includes(option)) {
             error = SignupFieldError.NOT_AN_OPTION;
           } else {
-            const price = optionPrices.get(option) ?? 0;
-            if (price) {
+            // Generate a product if the option is known and the question has prices,
+            // even if the option is free.
+            const price = optionPrices.get(option);
+            if (price != null) {
               answerProducts.push({
                 name: option,
                 amount: 1,
@@ -152,8 +154,10 @@ export function validateAnswersAndGetProducts(
             if (!validOptions.includes(answer)) {
               error = SignupFieldError.NOT_AN_OPTION;
             } else {
-              const price = optionPrices.get(answer) ?? 0;
-              if (price) {
+              // Generate a product if the option is known and the question has prices,
+              // even if the option is free.
+              const price = optionPrices.get(answer);
+              if (price != null) {
                 answerProducts.push({
                   name: answer,
                   amount: 1,
