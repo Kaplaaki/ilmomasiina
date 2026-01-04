@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 
 import { FORM_ERROR } from "final-form";
-import { Button, Form as BsForm } from "react-bootstrap";
+import { Button, Form as BsForm, Table } from "react-bootstrap";
 import { Form, FormRenderProps, useFormState } from "react-final-form";
 import { useTranslation } from "react-i18next";
 import { Link, useNavigate } from "react-router-dom";
@@ -19,6 +19,7 @@ import LinkButton from "../../../components/LinkButton";
 import type { TKey } from "../../../i18n";
 import paths from "../../../paths";
 import { useDurationFormatter } from "../../../utils/dateFormat";
+import { useDecimalPriceFormatter } from "../../../utils/priceFormat";
 import useEvent from "../../../utils/useEvent";
 import CommonFields from "./CommonFields";
 import DeleteSignup from "./DeleteSignup";
@@ -26,6 +27,38 @@ import { formDataToSignupUpdate, SignupFormData, signupToFormData } from "./form
 import NarrowContainer from "./NarrowContainer";
 import QuestionFields from "./QuestionFields";
 import SignupStatus from "./SignupStatus";
+
+const PaymentSummary = () => {
+  const { signup } = useEditSignupContext();
+  const formatPrice = useDecimalPriceFormatter(signup!.currency ?? CURRENCY);
+  const { t } = useTranslation();
+
+  return (
+    <>
+      <h2>{t("editSignup.title.payment")}</h2>
+      <Table className="ilmo--payment-summary">
+        <tbody>
+          {signup!.products?.map((product, i) => (
+            // eslint-disable-next-line react/no-array-index-key
+            <tr key={i}>
+              <td className="ilmo--amount">{t("editSignup.payment.amount", { amount: product.amount })}</td>
+              <td className="ilmo--product">{product.name}</td>
+              <td className="ilmo--price">{formatPrice(product.unitPrice)}</td>
+            </tr>
+          ))}
+        </tbody>
+        <tfoot>
+          <tr>
+            <th className="ilmo--total" colSpan={2}>
+              {t("editSignup.payment.total")}
+            </th>
+            <th className="ilmo--price">{formatPrice(signup!.price ?? 0)}</th>
+          </tr>
+        </tfoot>
+      </Table>
+    </>
+  );
+};
 
 const SubmitError = () => {
   const { isNew } = useEditSignupContext();
@@ -124,14 +157,17 @@ type BodyProps = FormRenderProps<SignupFormData> & {
 };
 
 const EditFormBody = ({ handleSubmit, deleting, onDelete }: BodyProps) => {
-  const { isNew, editingClosedOnLoad, preview } = useEditSignupContext();
+  const { isNew, editingClosedOnLoad, preview, signup } = useEditSignupContext();
   const { t } = useTranslation();
   const { submitting } = useFormState({ subscription: { submitting: true } });
   const onSubmit = useEvent(handleSubmit);
 
+  const showPayment = signup!.price != null && signup!.price > 0;
+
   return useMemo(
     () => (
       <NarrowContainer>
+        {showPayment && <PaymentSummary />}
         <h2>
           {/* eslint-disable-next-line no-nested-ternary */}
           {preview ? t("editSignup.title.preview") : isNew ? t("editSignup.title.signup") : t("editSignup.title.edit")}
@@ -147,7 +183,7 @@ const EditFormBody = ({ handleSubmit, deleting, onDelete }: BodyProps) => {
         {!editingClosedOnLoad && !preview && <DeleteSignup deleting={deleting} onDelete={onDelete} />}
       </NarrowContainer>
     ),
-    [onSubmit, onDelete, deleting, isNew, editingClosedOnLoad, submitting, preview, t],
+    [onSubmit, onDelete, deleting, isNew, editingClosedOnLoad, submitting, preview, showPayment, t],
   );
 };
 

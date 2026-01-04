@@ -1,5 +1,15 @@
 @use "../../styles/definitions" as *;
 
+.ilmo--payment-summary {
+  .ilmo--amount,
+  .ilmo--price {
+    text-align: right;
+    width: 0;
+  }
+  .ilmo-total {
+    width: 0;
+  }
+}
 .ilmo--form-error {
   color: $form-feedback-invalid-color;
 }

@@ -1,9 +1,9 @@
-import React, { ChangeEvent, useEffect, useMemo, useState } from "react";
+import React, { ChangeEvent, useEffect, useState } from "react";
 
 import { Form } from "react-bootstrap";
 import type { FieldInputProps, UseFieldConfig } from "react-final-form";
-import { useTranslation } from "react-i18next";
 
+import { useDecimalPriceFormatter } from "../../../utils/priceFormat";
 import useEvent from "../../../utils/useEvent";
 
 function parseValue(raw: string): number | null {
@@ -31,31 +31,20 @@ export const priceFieldConfig: UseFieldConfig<number | null> = {
 
 /** The field config for price fields using the given currency and current locale. */
 export default function PriceField({ value, onChange, onBlur, ...props }: FieldInputProps<number | null>) {
-  const { t } = useTranslation();
-  const locale = t("currencyFormat.locale");
-  const formatter = useMemo(
-    () =>
-      new Intl.NumberFormat(locale, {
-        style: "currency",
-        currency: CURRENCY,
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
-      }),
-    [locale],
-  );
+  const formatValue = useDecimalPriceFormatter();
 
   const [localValue, setLocalValue] = useState(
     // Format invalid and zero values to empty
-    () => (value !== 0 && value != null && Number.isFinite(value) ? formatter.format(value / 100) : ""),
+    () => (value !== 0 && value != null && Number.isFinite(value) ? formatValue(value) : ""),
   );
   const isEditingRef = React.useRef(false);
 
   // Update local value when external value changes, but not if we're currently editing.
   useEffect(() => {
     if (!isEditingRef.current) {
-      setLocalValue(value !== 0 && value != null && Number.isFinite(value) ? formatter.format(value / 100) : "");
+      setLocalValue(value !== 0 && value != null && Number.isFinite(value) ? formatValue(value) : "");
     }
-  }, [value, formatter]);
+  }, [value, formatValue]);
 
   const handleChange = useEvent((event: ChangeEvent<HTMLInputElement>) => {
     isEditingRef.current = true;
@@ -68,7 +57,7 @@ export default function PriceField({ value, onChange, onBlur, ...props }: FieldI
     isEditingRef.current = false;
     // Reformat valid values, leave empty and invalid as is.
     if (localValue && value != null && Number.isFinite(value)) {
-      const formatted = formatter.format(value / 100);
+      const formatted = formatValue(value);
       setLocalValue(formatted);
     }
     onBlur();
@@ -78,7 +67,7 @@ export default function PriceField({ value, onChange, onBlur, ...props }: FieldI
     <Form.Control
       type="text"
       inputMode="decimal"
-      placeholder={formatter.format(0)}
+      placeholder={formatValue(0)}
       {...props}
       value={localValue}
       onChange={handleChange}
