@@ -24,10 +24,9 @@ const questionOptionsSchema: ZodType<EditorEvent["questions"][number]["options"]
   });
 
 const priceSchema = z
-  .number({ invalid_type_error: "editor.errors.invalidPrice" })
-  .int({ message: "editor.errors.invalidPrice" })
-  .finite({ message: "editor.errors.invalidPrice" })
-  .nonnegative({ message: "editor.errors.negativePrice" });
+  .number({ error: "editor.errors.invalidPrice" })
+  .int({ error: "editor.errors.invalidPrice" })
+  .nonnegative({ error: "editor.errors.negativePrice" });
 
 const editorSchema: ZodType<EditorEvent> = z
   .object({
