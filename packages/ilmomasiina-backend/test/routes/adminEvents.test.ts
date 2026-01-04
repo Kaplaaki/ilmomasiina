@@ -786,7 +786,203 @@ describe("PATCH /api/admin/events/:id", () => {
     expect(after).toEqual(before);
   });
 
-  // TODO: test question options normalization
+  test("normalizes question options and prices on update", async () => {
+    const options = testQuestionOptions();
+    const prices = testQuestionPrices(options.length);
+    const localizedOptions = options.map((option) => option.toUpperCase());
+
+    // Create event with questions that have options and prices
+    const event = await testEvent({ questionCount: 0, quotaCount: 1 });
+    const [created, createResponse] = await updateEvent(event, {
+      updatedAt: event.updatedAt.toISOString(),
+      quotas: [{ id: event.quotas![0].id, title: event.quotas![0].title, size: event.quotas![0].size, price: 0 }],
+      questions: [
+        // Will be changed from CHECKBOX to TEXT -> options and prices should be nullified
+        {
+          type: QuestionType.CHECKBOX,
+          question: "Question 1",
+          required: false,
+          public: false,
+          options,
+          prices,
+        },
+        // Will have options set to null -> should normalize options and prices to null
+        {
+          type: QuestionType.SELECT,
+          question: "Question 2",
+          required: false,
+          public: false,
+          options,
+          prices,
+        },
+        // Will have options set to [] -> should normalize options and prices to null
+        {
+          type: QuestionType.CHECKBOX,
+          question: "Question 3",
+          required: false,
+          public: false,
+          options,
+          prices,
+        },
+        // Will have all prices set to 0 -> should normalize prices to null but keep options
+        {
+          type: QuestionType.SELECT,
+          question: "Question 4",
+          required: false,
+          public: false,
+          options,
+          prices,
+        },
+        // Will keep valid options and prices
+        {
+          type: QuestionType.CHECKBOX,
+          question: "Question 5",
+          required: false,
+          public: false,
+          options,
+          prices,
+        },
+      ],
+      languages: {
+        fi: {
+          title: "",
+          description: "",
+          price: "",
+          location: "",
+          webpageUrl: "",
+          facebookUrl: "",
+          quotas: [{ title: "" }],
+          questions: [
+            { question: "", options: localizedOptions },
+            { question: "", options: localizedOptions },
+            { question: "", options: localizedOptions },
+            { question: "", options: localizedOptions },
+            { question: "", options: localizedOptions },
+          ],
+          verificationEmail: "",
+        },
+      },
+    });
+    expect(createResponse.statusCode).toBe(200);
+    expect(created.questions).toHaveLength(5);
+
+    // Now update the event with changes that should trigger normalization
+    const [, response] = await updateEvent(event, {
+      updatedAt: created.updatedAt,
+      quotas: [{ id: event.quotas![0].id, title: event.quotas![0].title, size: event.quotas![0].size, price: 0 }],
+      questions: [
+        // Change type from CHECKBOX to TEXT -> options and prices should be nullified
+        {
+          id: created.questions[0].id,
+          type: QuestionType.TEXT,
+          question: "Question 1",
+          required: false,
+          public: false,
+          options,
+          prices,
+        },
+        // Set options to null -> should normalize options and prices to null
+        {
+          id: created.questions[1].id,
+          type: QuestionType.SELECT,
+          question: "Question 2",
+          required: false,
+          public: false,
+          options: null,
+          prices,
+        },
+        // Set options to [] -> should normalize options and prices to null
+        {
+          id: created.questions[2].id,
+          type: QuestionType.CHECKBOX,
+          question: "Question 3",
+          required: false,
+          public: false,
+          options: [],
+          prices,
+        },
+        // Set all prices to 0 -> should normalize prices to null but keep options
+        {
+          id: created.questions[3].id,
+          type: QuestionType.SELECT,
+          question: "Question 4",
+          required: false,
+          public: false,
+          options,
+          prices: prices.map(() => 0),
+        },
+        // Keep valid options and prices unchanged
+        {
+          id: created.questions[4].id,
+          type: QuestionType.CHECKBOX,
+          question: "Question 5",
+          required: false,
+          public: false,
+          options,
+          prices,
+        },
+      ],
+      languages: {
+        fi: {
+          title: "",
+          description: "",
+          price: "",
+          location: "",
+          webpageUrl: "",
+          facebookUrl: "",
+          quotas: [{ title: "" }],
+          questions: [
+            { question: "", options: localizedOptions },
+            { question: "", options: null },
+            { question: "", options: [] },
+            { question: "", options: localizedOptions },
+            { question: "", options: localizedOptions },
+          ],
+          verificationEmail: "",
+        },
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+
+    // Verify normalization in database
+    const dbEvent = await Event.findByPk(event.id, { include: [Question] });
+    expect(dbEvent!.questions).toHaveLength(5);
+
+    // Question 1: type changed to TEXT -> options and prices should be null
+    expect(dbEvent!.questions![0].type).toBe(QuestionType.TEXT);
+    expect(dbEvent!.questions![0].options).toBe(null);
+    expect(dbEvent!.questions![0].prices).toBe(null);
+
+    // Question 2: options set to null -> options and prices should be null
+    expect(dbEvent!.questions![1].type).toBe(QuestionType.SELECT);
+    expect(dbEvent!.questions![1].options).toBe(null);
+    expect(dbEvent!.questions![1].prices).toBe(null);
+
+    // Question 3: options set to [] -> options and prices should be null
+    expect(dbEvent!.questions![2].type).toBe(QuestionType.CHECKBOX);
+    expect(dbEvent!.questions![2].options).toBe(null);
+    expect(dbEvent!.questions![2].prices).toBe(null);
+
+    // Question 4: all prices set to 0 -> prices should be null but options kept
+    expect(dbEvent!.questions![3].type).toBe(QuestionType.SELECT);
+    expect(dbEvent!.questions![3].options).toEqual(options);
+    expect(dbEvent!.questions![3].prices).toBe(null);
+
+    // Question 5: valid options and prices kept unchanged
+    expect(dbEvent!.questions![4].type).toBe(QuestionType.CHECKBOX);
+    expect(dbEvent!.questions![4].options).toEqual(options);
+    expect(dbEvent!.questions![4].prices).toEqual(prices);
+
+    // Verify language normalization
+    expect(dbEvent!.languages.fi).toBeTruthy();
+    expect(dbEvent!.languages.fi.questions).toHaveLength(5);
+    expect(dbEvent!.languages.fi.questions![0].options).toBe(null);
+    expect(dbEvent!.languages.fi.questions![1].options).toBe(null);
+    expect(dbEvent!.languages.fi.questions![2].options).toBe(null);
+    expect(dbEvent!.languages.fi.questions![3].options).toEqual(localizedOptions);
+    expect(dbEvent!.languages.fi.questions![4].options).toEqual(localizedOptions);
+  });
 
   test("does not allow duplicate slugs", async () => {
     const event1 = await testEvent();

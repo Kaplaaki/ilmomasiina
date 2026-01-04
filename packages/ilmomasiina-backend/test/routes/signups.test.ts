@@ -86,6 +86,9 @@ describe("getSignupForEdit", () => {
 
     expect(data.signup.status).toEqual(status.status);
     expect(data.signup.position).toEqual(status.position);
+    expect(data.signup.price).toEqual(signup.price);
+    expect(data.signup.currency).toEqual(signup.currency);
+    expect(data.signup.products).toEqual(signup.products);
   });
 
   test("checks edit token authentication", async () => {
