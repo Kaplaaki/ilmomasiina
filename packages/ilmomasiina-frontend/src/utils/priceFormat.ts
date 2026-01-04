@@ -1,7 +1,7 @@
 import { useTranslation } from "react-i18next";
-import { defaultMemoize } from "reselect";
+import { lruMemoize } from "reselect";
 
-const formatFactory = defaultMemoize(
+const formatFactory = lruMemoize(
   (locale: string, currency: string, opts: Partial<Intl.NumberFormatOptions>) => {
     const formatter = new Intl.NumberFormat(locale, {
       style: "currency",
