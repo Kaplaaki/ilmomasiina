@@ -329,11 +329,11 @@ describe("validateAnswersAndGetProducts", () => {
       ]);
     });
 
-    test("returns products only for options with prices", () => {
+    test("returns zero price for missing prices", () => {
       const question: QuestionAttributes = {
         ...baseQuestion,
-        options: ["Option A", "Option B", "Option C", "Option D"],
-        prices: [100, 200], // missing prices for C and D
+        options: ["Option A", "Option B", "Option C"],
+        prices: [100, 200], // missing prices for C
       };
 
       expect(validateQuestion(question, "Option A").answerProducts).toEqual([
@@ -350,23 +350,11 @@ describe("validateAnswersAndGetProducts", () => {
           unitPrice: 200,
         },
       ]);
-      expect(validateQuestion(question, "Option C").answerProducts).toEqual([]);
-      expect(validateQuestion(question, "Option D").answerProducts).toEqual([]);
-    });
-
-    test("returns no products for zero-priced option", () => {
-      const question: QuestionAttributes = {
-        ...baseQuestion,
-        options: ["Free Option", "Paid Option"],
-        prices: [0, 100],
-      };
-
-      expect(validateQuestion(question, "Free Option").answerProducts).toEqual([]);
-      expect(validateQuestion(question, "Paid Option").answerProducts).toEqual([
+      expect(validateQuestion(question, "Option C").answerProducts).toEqual([
         {
-          name: "Paid Option",
+          name: "Option C",
           amount: 1,
-          unitPrice: 100,
+          unitPrice: 0,
         },
       ]);
     });
@@ -536,15 +524,26 @@ describe("validateAnswersAndGetProducts", () => {
       expect(answerErrors).toBeUndefined();
     });
 
-    test("returns no products for zero-priced selection", () => {
+    test("returns products for zero-priced selection in paid question", () => {
       const question: QuestionAttributes = {
         ...baseQuestion,
         options: ["Free", "Paid"],
         prices: [0, 100],
       };
 
-      expect(validateQuestion(question, ["Free"]).answerProducts).toEqual([]);
+      expect(validateQuestion(question, ["Free"]).answerProducts).toEqual([
+        {
+          name: "Free",
+          amount: 1,
+          unitPrice: 0,
+        },
+      ]);
       expect(validateQuestion(question, ["Free", "Paid"]).answerProducts).toEqual([
+        {
+          name: "Free",
+          amount: 1,
+          unitPrice: 0,
+        },
         {
           name: "Paid",
           amount: 1,
@@ -580,24 +579,25 @@ describe("validateAnswersAndGetProducts", () => {
       ]);
     });
 
-    test("returns products only for selected options with prices", () => {
+    test("returns zero price for missing prices", () => {
       const question: QuestionAttributes = {
         ...baseQuestion,
-        options: ["Option A", "Option B", "Option C", "Option D"],
-        prices: [100, 200], // missing prices for C and D
+        options: ["Option A", "Option B", "Option C"],
+        prices: [100, 200], // missing prices for C
       };
 
-      const { newAnswers, answerProducts, answerErrors } = validateQuestion(question, [
-        "Option A",
-        "Option C",
-        "Option D",
-      ]);
-      expect(newAnswers).toEqual([{ questionId: question.id, answer: ["Option A", "Option C", "Option D"] }]);
+      const { newAnswers, answerProducts, answerErrors } = validateQuestion(question, ["Option A", "Option C"]);
+      expect(newAnswers).toEqual([{ questionId: question.id, answer: ["Option A", "Option C"] }]);
       expect(answerProducts).toEqual([
         {
           name: "Option A",
           amount: 1,
           unitPrice: 100,
+        },
+        {
+          name: "Option C",
+          amount: 1,
+          unitPrice: 0,
         },
       ]);
       expect(answerErrors).toBeUndefined();
