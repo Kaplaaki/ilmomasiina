@@ -1,6 +1,6 @@
 import { z, ZodType } from "zod";
 
-import { PaymentMode, MAX_OPTIONS_PER_QUESTION, QuestionType } from "@tietokilta/ilmomasiina-models";
+import { MAX_OPTIONS_PER_QUESTION, PaymentMode, QuestionType } from "@tietokilta/ilmomasiina-models";
 import { EditorEvent, EditorEventType } from "../../modules/editor/types";
 
 // The form validation should catch almost all error cases.
