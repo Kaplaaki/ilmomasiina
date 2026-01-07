@@ -95,25 +95,22 @@ export const publicDynamicSignupAttributes = Type.Object({
 });
 
 /** Non-editable, automatically updated signup attributes only returned for admins and the signup owner. */
-export const adminDynamicSignupAttributes = Type.Composite([
-  publicDynamicSignupAttributes,
-  Type.Object({
-    price: Nullable(Type.Integer({ minimum: 0 }), {
-      description: "Total price of the signup in cents, calculated when it was last updated.",
-    }),
-    currency: Nullable(Type.String({ maxLength: 8 }), {
-      description: "The currency in which the price is denominated.",
-    }),
+export const adminDynamicSignupAttributes = Type.Interface([publicDynamicSignupAttributes], {
+  price: Nullable(Type.Integer({ minimum: 0 }), {
+    description: "Total price of the signup in cents, calculated when it was last updated.",
   }),
-]);
+  currency: Nullable(Type.String({ maxLength: 8 }), {
+    description: "The currency in which the price is denominated.",
+  }),
+});
 
 /** Non-editable, automatically updated signup attributes only returned for the signup owner. */
-export const ownerDynamicSignupAttributes = Type.Composite([
-  adminDynamicSignupAttributes,
+export const ownerDynamicSignupAttributes = Type.Interface(
+  [adminDynamicSignupAttributes],
   // products is excluded for admins, because the JSON size would blow up unnecessarily.
-  Type.Object({
+  {
     products: Nullable(Type.Array(productSchema), {
       description: "The product lines used to calculate the price.",
     }),
-  }),
-]);
+  },
+);
