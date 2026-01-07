@@ -9,7 +9,7 @@ import type {
   EventUpdateBody,
   WouldMoveSignupsToQueueError,
 } from "@tietokilta/ilmomasiina-models";
-import { AuditEvent, QuestionType } from "@tietokilta/ilmomasiina-models";
+import { AuditEvent } from "@tietokilta/ilmomasiina-models";
 import { getSequelize } from "../../../models";
 import { convertSequelizeValidationErrors } from "../../../models/errors";
 import { Event } from "../../../models/event";
@@ -55,11 +55,9 @@ export default async function updateEvent(
       // Find existing questions and quotas for requested IDs, and add order fields
       const updatedQuestions = request.body.questions?.map((question, order) => ({
         ...question,
+        ...Question.normalizeOptions(question),
         order,
         existing: question.id ? event.questions!.find((old) => question.id === old.id) : undefined,
-        // Remove options if the question type doesn't support them
-        options:
-          question.type === QuestionType.CHECKBOX || question.type === QuestionType.SELECT ? question.options : null,
       }));
       const updatedQuotas = request.body.quotas?.map((quota, order) => ({
         ...quota,
@@ -106,9 +104,7 @@ export default async function updateEvent(
         await Question.destroy({
           where: {
             eventId: event.id,
-            id: {
-              [Op.notIn]: reuseQuestionIds,
-            },
+            id: { [Op.notIn]: reuseQuestionIds },
           },
           transaction,
         });
@@ -133,9 +129,7 @@ export default async function updateEvent(
         await Quota.destroy({
           where: {
             eventId: event.id,
-            id: {
-              [Op.notIn]: reuseQuotaIds,
-            },
+            id: { [Op.notIn]: reuseQuotaIds },
           },
           transaction,
         });

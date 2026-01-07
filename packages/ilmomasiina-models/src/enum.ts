@@ -14,6 +14,16 @@ export enum QuestionType {
   CHECKBOX = "checkbox",
 }
 
+/** Payment modes for events. */
+export enum PaymentMode {
+  /** No payments. */
+  DISABLED = "disabled",
+  /** Manual payments confirmed by admin. */
+  MANUAL = "manual",
+  /** Online payments via payment integration. */
+  ONLINE = "online",
+}
+
 /** Event types that can be audit logged. */
 export enum AuditEvent {
   CREATE_EVENT = "event.create",

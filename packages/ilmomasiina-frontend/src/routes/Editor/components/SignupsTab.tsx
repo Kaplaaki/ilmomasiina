@@ -4,10 +4,11 @@ import { Button, Form } from "react-bootstrap";
 import { useTranslation } from "react-i18next";
 
 import { stringifyAnswer } from "@tietokilta/ilmomasiina-client/dist/utils/signupUtils";
-import { AdminEventResponse, SignupStatus } from "@tietokilta/ilmomasiina-models";
+import { AdminEventResponse, PaymentMode, SignupStatus } from "@tietokilta/ilmomasiina-models";
 import type { AdminSignupWithQuota } from "../../../modules/editor/types";
 import useStore from "../../../modules/store";
 import { useActionDateTimeFormatter } from "../../../utils/dateFormat";
+import { usePriceFormatter } from "../../../utils/priceFormat";
 import useEvent from "../../../utils/useEvent";
 import CSVLink, { CSVOptions } from "./CSVLink";
 import {
@@ -50,6 +51,8 @@ const SignupRow = ({ position, signup, showQuota }: SignupProps) => {
       ? t(`editor.signups.column.status.${signup.status}`)
       : null;
 
+  const formatPrice = usePriceFormatter(signup.currency ?? CURRENCY);
+
   return (
     <tr className={!signup.confirmed ? "ilmo--unconfirmed" : ""}>
       <td key="position">{`${position}.`}</td>
@@ -68,6 +71,9 @@ const SignupRow = ({ position, signup, showQuota }: SignupProps) => {
         <td key={question.id}>{stringifyAnswer(answersMap[question.id])}</td>
       ))}
       <td key="timestamp">{actionDateFormat.format(new Date(signup.createdAt))}</td>
+      {event.payments !== PaymentMode.DISABLED && (
+        <td key="price">{signup.price != null && formatPrice(signup.price)}</td>
+      )}
       <td key="actions">
         <Button type="button" variant="primary" size="sm" onClick={onEdit}>
           {t("editor.signups.action.edit")}
@@ -104,6 +110,7 @@ const SignupTable = ({ event, signups, showQuota }: TableProps) => {
             <th key={q.id}>{q.question}</th>
           ))}
           <th key="timestamp">{t("editor.signups.column.time")}</th>
+          {event.payments !== PaymentMode.DISABLED && <th key="price">{t("editor.signups.column.price")}</th>}
           <th key="actions" aria-label={t("editor.signups.column.actions")} />
         </tr>
       </thead>

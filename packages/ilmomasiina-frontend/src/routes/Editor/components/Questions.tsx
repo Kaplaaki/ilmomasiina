@@ -1,11 +1,11 @@
 import React, { useMemo } from "react";
 
 import { Button, Col, Form, FormCheckProps, InputGroup, Row } from "react-bootstrap";
-import { Field, FieldRenderProps } from "react-final-form";
+import { Field, FieldRenderProps, useForm } from "react-final-form";
 import { useTranslation } from "react-i18next";
 
 import useShallowMemo from "@tietokilta/ilmomasiina-client/dist/utils/useShallowMemo";
-import { MAX_OPTIONS_PER_QUESTION, QuestionLanguage, QuestionType } from "@tietokilta/ilmomasiina-models";
+import { MAX_OPTIONS_PER_QUESTION, PaymentMode, QuestionLanguage, QuestionType } from "@tietokilta/ilmomasiina-models";
 import FieldRow from "../../../components/FieldRow";
 import { EditorQuestion } from "../../../modules/editor/types";
 import useEvent from "../../../utils/useEvent";
@@ -13,16 +13,11 @@ import useEditorErrors from "./errors";
 import { useFieldValue } from "./hooks";
 import LocalizedField from "./LocalizedField";
 import LocalizedFieldRow from "./LocalizedFieldRow";
+import PriceField, { priceFieldConfig } from "./PriceField";
 import SelectBox from "./SelectBox";
 import Sortable from "./Sortable";
 import useFieldArrayMap from "./useFieldArrayMap";
 import useLocalizedFieldArrayMutators from "./useLocalizedFieldArrayMutators";
-
-type OptionProps = {
-  name: string;
-  index: number;
-  remove: (index: number) => void;
-};
 
 type CheckboxRenderProps = {
   // <Field> provides us `string`, Form.Check wants "checkbox" | "radio".
@@ -33,27 +28,48 @@ const renderCheck = ({ input, meta, ...props }: FieldRenderProps<boolean, HTMLIn
   <Form.Check {...input} type="checkbox" {...props} />
 );
 
-const OptionRow = ({ name, index, remove }: OptionProps) => {
+type OptionProps = {
+  name: string;
+  parent: string;
+  index: number;
+  remove: (index: number) => void;
+  hasPrices: boolean;
+};
+
+const OptionRow = ({ name, parent, index, remove, hasPrices }: OptionProps) => {
   const { t } = useTranslation();
   const formatError = useEditorErrors();
+  const hasPayments = useFieldValue<PaymentMode>("payments") !== PaymentMode.DISABLED;
 
   const removeThis = useEvent(() => remove(index));
 
   return (
-    <LocalizedFieldRow
-      name={name}
-      type="text"
-      label={t("editor.questions.questionOptions")}
-      required
-      formatError={formatError}
-    >
-      <InputGroup>
-        <LocalizedField name={name} required maxLength={255} defaultAsPlaceholder />
-        <Button variant="outline-danger" onClick={removeThis}>
-          {t("editor.questions.questionOptions.delete")}
-        </Button>
-      </InputGroup>
-    </LocalizedFieldRow>
+    <>
+      <LocalizedFieldRow
+        name={name}
+        type="text"
+        label={t("editor.questions.questionOptions")}
+        required
+        formatError={formatError}
+      >
+        <InputGroup>
+          <LocalizedField name={name} required maxLength={255} defaultAsPlaceholder />
+          <Button variant="outline-danger" onClick={removeThis}>
+            {t("editor.questions.questionOptions.delete")}
+          </Button>
+        </InputGroup>
+      </LocalizedFieldRow>
+      {hasPayments && hasPrices && (
+        <FieldRow
+          name={`${parent}.prices[${index}]`}
+          label={t("editor.questions.questionOptions.price")}
+          as={PriceField}
+          config={priceFieldConfig}
+          help={t("editor.questions.questionOptions.price.info")}
+          formatError={formatError}
+        />
+      )}
+    </>
   );
 };
 
@@ -71,9 +87,19 @@ const QuestionRow = ({ name, index }: QuestionProps) => {
 
   const optionFields = useFieldArrayMap(`${name}.options`);
   const optionMutators = useLocalizedFieldArrayMutators<string>(`${name}.options`);
-  const addOption = useEvent(() => optionMutators.push("", ""));
+  const form = useForm();
+
+  const addOption = useEvent(() => {
+    optionMutators.push("", "");
+    form.mutators.push(`${name}.prices`, 0);
+  });
+  const removeOption = useEvent((optIndex: number) => {
+    optionMutators.remove(optIndex);
+    form.mutators.remove(`${name}.prices`, optIndex);
+  });
 
   const type = useFieldValue<QuestionType>(`${name}.type`);
+  const hasPrices = useFieldValue<boolean>(`${name}.hasPrices`);
 
   return (
     <Row className="question-body px-0">
@@ -91,6 +117,7 @@ const QuestionRow = ({ name, index }: QuestionProps) => {
           name={`${name}.type`}
           label={t("editor.questions.questionType")}
           as={SelectBox}
+          help={t("editor.questions.questionType.info")}
           required
           options={[
             [QuestionType.TEXT, t("editor.questions.questionType.text")],
@@ -104,7 +131,14 @@ const QuestionRow = ({ name, index }: QuestionProps) => {
         {(type === QuestionType.SELECT || type === QuestionType.CHECKBOX) && (
           <>
             {optionFields.map((optName, i) => (
-              <OptionRow key={optName} name={optName} index={i} remove={optionMutators.remove} />
+              <OptionRow
+                key={optName}
+                parent={name}
+                name={optName}
+                index={i}
+                remove={removeOption}
+                hasPrices={hasPrices}
+              />
             ))}
             {optionFields.length! < MAX_OPTIONS_PER_QUESTION && (
               <Row>
@@ -138,6 +172,17 @@ const QuestionRow = ({ name, index }: QuestionProps) => {
         >
           {renderCheck}
         </Field>
+        {(type === QuestionType.SELECT || type === QuestionType.CHECKBOX) && (
+          <Field
+            name={`${name}.hasPrices`}
+            type="checkbox"
+            id={`${name}.hasPrices`}
+            label={t("editor.questions.hasPrices")}
+            className="mb-3"
+          >
+            {renderCheck}
+          </Field>
+        )}
         <Button variant="danger" type="button" onClick={removeThis}>
           {t("editor.questions.deleteQuestion")}
         </Button>
@@ -161,6 +206,8 @@ const Questions = () => {
         question: "",
         type: QuestionType.TEXT,
         options: [""],
+        prices: [0],
+        hasPrices: false,
       },
       {
         question: "",

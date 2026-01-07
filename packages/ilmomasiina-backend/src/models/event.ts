@@ -17,7 +17,7 @@ import {
   Sequelize,
 } from "sequelize";
 
-import type { QuestionCreate, QuotaCreate } from "@tietokilta/ilmomasiina-models";
+import { PaymentMode, QuestionCreate, QuotaCreate } from "@tietokilta/ilmomasiina-models";
 import type { EventAttributes, EventLanguage } from "@tietokilta/ilmomasiina-models/dist/models";
 import config from "../config";
 import { EventValidationError } from "./errors";
@@ -26,7 +26,9 @@ import type { Quota, QuotaCreationAttributes } from "./quota";
 import { generateRandomId, RANDOM_ID_LENGTH } from "./randomId";
 import { jsonColumnGetter } from "./util/json";
 
-// Drop updatedAt so we don't need to define it manually in Event.init()
+// Drop updatedAt so we don't need to define it manually in Event.init().
+// updatedAt is in EventAttributes since it's referenced in the adminEventListEventAttrs array, which is
+// type-checked against EventAttributes.
 interface EventManualAttributes extends Omit<EventAttributes, "updatedAt"> {}
 
 export interface EventCreationAttributes extends Optional<
@@ -75,6 +77,7 @@ export class Event extends Model<EventManualAttributes, EventCreationAttributes>
   public nameQuestion!: boolean;
   public emailQuestion!: boolean;
   public verificationEmail!: string | null;
+  public payments!: PaymentMode;
   public languages!: Record<string, EventLanguage>;
   public defaultLanguage!: string;
 
@@ -146,8 +149,7 @@ export class Event extends Model<EventManualAttributes, EventCreationAttributes>
           throw new EventValidationError(`question ${i} in language ${langKey} has wrong number of options`);
         }
         // Remove options if the question does not have them.
-        // We expect createEvent/updateEvent to remove options from questions that don't support
-        // options before calling this.
+        // We expect Question.normalizeOptions() to remove unnecessary options before this is called.
         if (!question.options) {
           localizedQuestion.options = null;
         }
@@ -246,6 +248,11 @@ export default function setupEventModel(sequelize: Sequelize) {
       },
       verificationEmail: {
         type: DataTypes.TEXT,
+      },
+      payments: {
+        type: DataTypes.ENUM(...Object.values(PaymentMode)),
+        allowNull: false,
+        defaultValue: PaymentMode.DISABLED,
       },
       languages: {
         type: DataTypes.JSON,

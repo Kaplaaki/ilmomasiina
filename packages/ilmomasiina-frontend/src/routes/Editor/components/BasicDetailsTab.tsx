@@ -5,6 +5,7 @@ import { useForm } from "react-final-form";
 import { useTranslation } from "react-i18next";
 import Combobox from "react-widgets/Combobox";
 
+import { PaymentMode } from "@tietokilta/ilmomasiina-models";
 import FieldRow from "../../../components/FieldRow";
 import { EditorEventType } from "../../../modules/editor/types";
 import useStore from "../../../modules/store";
@@ -196,6 +197,20 @@ const BasicDetailsTab = () => {
           formatError={formatError}
         />
       )}
+      {eventType !== EditorEventType.ONLY_EVENT && (
+        <FieldRow
+          name="payments"
+          label={t("editor.basic.payments")}
+          as={SelectBox}
+          options={[
+            [PaymentMode.DISABLED, t("editor.basic.payments.disabled")],
+            [PaymentMode.MANUAL, t("editor.basic.payments.manual")],
+            // TODO: enable when online payments are implemented
+            // [PaymentMode.ONLINE, t("editor.basic.payments.online")],
+          ]}
+          formatError={formatError}
+        />
+      )}
       <FieldRow
         name="category"
         label={t("editor.basic.category")}
@@ -231,6 +246,7 @@ const BasicDetailsTab = () => {
         defaultAsPlaceholder
         label={t("editor.basic.price")}
         maxLength={255}
+        help={t("editor.basic.price.info")}
         formatError={formatError}
       />
       <LocalizedFieldRow

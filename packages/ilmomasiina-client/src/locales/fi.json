@@ -1,6 +1,7 @@
 {
   "public": {
     "dateFormat.locale": "fi-FI",
+    "currencyFormat.locale": "fi-FI",
     "duration.days_one": "{{count}} päivä",
     "duration.days_other": "{{count}} päivää",
     "duration.hours_one": "{{count}} tunti",
@@ -14,6 +15,7 @@
     "editSignup.action.edit": "Päivitä",
     "editSignup.action.save": "Tallenna",
     "editSignup.action.back": "Takaisin",
+    "editSignup.action.pay": "Maksa",
     "editSignup.delete.action": "Poista ilmoittautuminen",
     "editSignup.delete.action.confirm": "Paina uudelleen varmistukseksi\u2026",
     "editSignup.delete.info1": "Oletko varma, että haluat poistaa ilmoittautumisesi tapahtumaan <1>{{event}}</1>?",
@@ -68,6 +70,9 @@
     "editSignup.title.edit": "Muokkaa ilmoittautumista",
     "editSignup.title.signup": "Ilmoittaudu",
     "editSignup.title.preview": "Esikatsele ilmolomaketta",
+    "editSignup.title.payment": "Maksutiedot",
+    "editSignup.payment.amount": "{{amount}}\u00D7",
+    "editSignup.payment.total": "Yhteensä",
     "errors.returnToEvents": "Palaa tapahtumalistaukseen",
     "errors.contactAdmin": "Jos ongelma jatkuu, ota yhteyttä ylläpitäjiin.",
     "errors.default.title": "Hups, jotain meni pieleen",

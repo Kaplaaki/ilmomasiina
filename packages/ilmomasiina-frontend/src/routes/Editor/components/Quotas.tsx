@@ -5,13 +5,14 @@ import { UseFieldConfig } from "react-final-form";
 import { useTranslation } from "react-i18next";
 
 import useShallowMemo from "@tietokilta/ilmomasiina-client/dist/utils/useShallowMemo";
-import { QuotaLanguage } from "@tietokilta/ilmomasiina-models";
+import { PaymentMode, QuotaLanguage } from "@tietokilta/ilmomasiina-models";
 import FieldRow from "../../../components/FieldRow";
 import { EditorQuota } from "../../../modules/editor/types";
 import useEvent from "../../../utils/useEvent";
 import useEditorErrors from "./errors";
 import { useFieldValue } from "./hooks";
 import LocalizedFieldRow from "./LocalizedFieldRow";
+import PriceField, { priceFieldConfig } from "./PriceField";
 import Sortable from "./Sortable";
 import useFieldArrayMap from "./useFieldArrayMap";
 import useLocalizedFieldArrayMutators from "./useLocalizedFieldArrayMutators";
@@ -28,6 +29,7 @@ const numberConfig: UseFieldConfig<number | null> = {
 const QuotaRow = ({ name, index }: QuotaRowProps) => {
   const { t } = useTranslation();
   const formatError = useEditorErrors();
+  const hasPayments = useFieldValue<PaymentMode>("payments") !== PaymentMode.DISABLED;
 
   const { length } = useFieldArrayMap("quotas");
   const { remove } = useLocalizedFieldArrayMutators<EditorQuota, QuotaLanguage>("quotas");
@@ -61,6 +63,16 @@ const QuotaRow = ({ name, index }: QuotaRowProps) => {
           config={numberConfig}
           formatError={formatError}
         />
+        {hasPayments && (
+          <FieldRow
+            name={`${name}.price`}
+            label={t("editor.quotas.price")}
+            as={PriceField}
+            config={priceFieldConfig}
+            help={t("editor.quotas.price.info")}
+            formatError={formatError}
+          />
+        )}
       </Col>
       {index > 0 && (
         <Col xs="12" sm="2" className="no-focus">
@@ -85,6 +97,7 @@ const Quotas = () => {
         key: `new-${Math.random()}`,
         title: "",
         size: null,
+        price: 0,
       },
       {
         title: "",

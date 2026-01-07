@@ -33,7 +33,7 @@ async function sendPromotedFromQueueMail(signup: Signup, eventId: Event["id"]) {
 
 /** Internal, non-batched version. See below for explanation of what this does. */
 async function refreshSignupPositionsInternal(
-  eventRef: Event,
+  eventRef: Pick<Event, "id">,
   transaction: Transaction | undefined,
   moveSignupsToQueue: boolean,
   queuedCount: number,
@@ -167,7 +167,7 @@ const refreshQueues = new Map<
  * performed only once for all calls performed during a previous operation.
  */
 export async function refreshSignupPositions(
-  eventRef: Event,
+  eventRef: Pick<Event, "id">,
   transaction?: Transaction,
   moveSignupsToQueue: boolean = true,
 ): Promise<Signup[]> {

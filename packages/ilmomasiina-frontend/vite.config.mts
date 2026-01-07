@@ -80,6 +80,7 @@ export default defineConfig(({ mode }) => ({
     BRANDING_LOGIN_PLACEHOLDER_EMAIL: process.env.BRANDING_LOGIN_PLACEHOLDER_EMAIL || "admin@tietokilta.fi",
     TIMEZONE,
     DEFAULT_LANGUAGE: process.env.DEFAULT_LANGUAGE || "fi",
+    CURRENCY: process.env.CURRENCY || "EUR",
   }),
 
   plugins: [

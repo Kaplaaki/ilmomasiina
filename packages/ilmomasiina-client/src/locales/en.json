@@ -1,6 +1,7 @@
 {
   "public": {
     "dateFormat.locale": "en-FI",
+    "currencyFormat.locale": "en-FI",
     "duration.days_one": "{{count}} day",
     "duration.days_other": "{{count}} days",
     "duration.hours_one": "{{count}} hour",
@@ -14,6 +15,7 @@
     "editSignup.action.edit": "Update",
     "editSignup.action.save": "Save",
     "editSignup.action.back": "Back",
+    "editSignup.action.pay": "Pay",
     "editSignup.delete.action": "Delete signup",
     "editSignup.delete.action.confirm": "Click again to confirm\u2026",
     "editSignup.delete.info1": "Are you sure you want to delete your sign up to <1>{{event}}</1>?",
@@ -68,6 +70,9 @@
     "editSignup.title.edit": "Edit signup",
     "editSignup.title.signup": "Sign up",
     "editSignup.title.preview": "Preview signup form",
+    "editSignup.title.payment": "Payment details",
+    "editSignup.payment.amount": "{{amount}}\u00D7",
+    "editSignup.payment.total": "Total",
     "errors.returnToEvents": "Return to event list",
     "errors.contactAdmin": "If the problem persists, please report it to the administrators.",
     "errors.default.title": "Whoops, something went wrong",

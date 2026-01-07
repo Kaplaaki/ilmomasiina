@@ -3,7 +3,7 @@ import { NotFound } from "http-errors";
 import moment from "moment";
 import { Op } from "sequelize";
 
-import type {
+import {
   AdminEventPathParams,
   AdminEventResponse,
   AdminSignupSchema,
@@ -27,7 +27,7 @@ import { Question } from "../../models/question";
 import { Quota } from "../../models/quota";
 import { Signup } from "../../models/signup";
 import createCache from "../../util/cache";
-import { StringifyApi } from "../utils";
+import type { StringifyApi } from "../utils";
 
 export const basicEventInfoCached = createCache({
   maxAgeMs: 5000,
@@ -120,7 +120,7 @@ export const eventDetailsForUserCached = createCache({
                 // Hide name if necessary
                 firstName: event.nameQuestion && signup.namePublic ? signup.firstName : null,
                 lastName: event.nameQuestion && signup.namePublic ? signup.lastName : null,
-                answers: signup.answers!,
+                answers: signup.answers!.map((answer) => answer.get({ plain: true })),
                 status: signup.status,
                 confirmed: signup.confirmedAt !== null,
               }))
@@ -137,7 +137,6 @@ export const eventDetailsForUserCached = createCache({
 
 export async function eventDetailsForUser(eventSlug: EventSlug): Promise<UserEventResponse> {
   const { event, registrationStartDate, registrationEndDate } = await eventDetailsForUserCached(eventSlug);
-
   // Dynamic extra fields
   let registrationClosed = true;
   let millisTillOpening = null;
@@ -161,9 +160,9 @@ export async function eventDetailsForUser(eventSlug: EventSlug): Promise<UserEve
 
 /** Converts a signup with answers included to JSON for the admin API. */
 export function formatSignupForAdmin(signup: Signup): AdminSignupSchema {
+  const plain = signup.get({ plain: true });
   const result = {
-    ...signup.get({ plain: true }),
-    status: signup.status,
+    ...plain,
     answers: signup.answers!.map((answer) => answer.get({ plain: true })),
     confirmed: Boolean(signup.confirmedAt),
   };
@@ -218,12 +217,12 @@ export async function eventDetailsForAdmin(eventID: EventID): Promise<AdminEvent
       [Signup, "createdAt", "ASC"],
     ],
   });
-
   // Admins get a simple result with many columns
   const res = {
     ...event.get({ plain: true }),
-    questions: event.questions!.map((question) => question.get({ plain: true })),
+    // updatedAt must be manually repeated here, as it's not present in EventManualAttributes (see models/event.ts)
     updatedAt: event.updatedAt,
+    questions: event.questions!.map((question) => question.get({ plain: true })),
     quotas: quotas.map((quota) => ({
       ...quota.get({ plain: true }),
       signups: quota.signups!.map(formatSignupForAdmin),

@@ -53,16 +53,15 @@ export default async function getSignupForEdit(
     signup: {
       ...signup.get({ plain: true }),
       confirmed: Boolean(signup.confirmedAt),
-      status: signup.status,
-      answers: signup.answers!,
-      quota: signup.quota!,
+      answers: signup.answers!.map((answer) => answer.get({ plain: true })),
+      quota: signup.quota!.get({ plain: true }),
       confirmableForMillis,
       editableForMillis,
     },
     event: {
       ...event.get({ plain: true }),
       questions: event.questions!.map((question) => question.get({ plain: true })),
-      quotas: event.quotas!.map((question) => question.get({ plain: true })),
+      quotas: event.quotas!.map((quota) => quota.get({ plain: true })),
     },
   };
 

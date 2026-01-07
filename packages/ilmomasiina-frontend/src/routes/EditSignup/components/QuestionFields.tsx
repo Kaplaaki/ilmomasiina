@@ -7,9 +7,11 @@ import { useField } from "react-final-form";
 import { useTranslation } from "react-i18next";
 
 import { useEditSignupContext } from "@tietokilta/ilmomasiina-client";
+import { questionHasPrices } from "@tietokilta/ilmomasiina-client/dist/utils/paymentUtils";
 import { stringifyAnswer } from "@tietokilta/ilmomasiina-client/dist/utils/signupUtils";
 import { Question, QuestionType } from "@tietokilta/ilmomasiina-models";
 import FieldRow from "../../../components/FieldRow";
+import { usePriceFormatter } from "../../../utils/priceFormat";
 import useEvent from "../../../utils/useEvent";
 import useFieldErrors from "./fieldError";
 
@@ -29,6 +31,14 @@ const QuestionField = ({ name, question, disabled }: QuestionFieldProps) => {
 
   const { t } = useTranslation();
   const formatError = useFieldErrors();
+
+  const formatPrice = usePriceFormatter();
+  // Show the prices for each option if the question has some paid options.
+  // Add a + sign if the signup has a "base price" from the quota.
+  const quotaHasPrice = useEditSignupContext().signup!.quota.price > 0;
+  const hasPrices = questionHasPrices(question);
+  const formatOptionPrice = (price?: number) =>
+    hasPrices && price != null ? ` (${quotaHasPrice ? "+" : ""}${formatPrice(price)})` : "";
 
   // We need to wrap onChange, as react-final-form complains if we pass radios to it without type="radio".
   // If we pass type="radio", it doesn't provide us with the value of the field.
@@ -80,7 +90,7 @@ const QuestionField = ({ name, question, disabled }: QuestionFieldProps) => {
           type="checkbox"
           id={`question-${question.id}-option-${optIndex}`}
           value={option}
-          label={option}
+          label={`${option}${formatOptionPrice(question.prices?.[optIndex])}`}
           required={question.required && !currentAnswerArray.some((answer) => answer !== option)}
           disabled={disabled}
           checked={currentAnswerArray.includes(option)}
@@ -123,6 +133,7 @@ const QuestionField = ({ name, question, disabled }: QuestionFieldProps) => {
               // eslint-disable-next-line react/no-array-index-key
               <option key={optIndex} value={option}>
                 {option}
+                {formatOptionPrice(question.prices?.[optIndex])}
               </option>
             ))}
           </Form.Select>
@@ -136,7 +147,7 @@ const QuestionField = ({ name, question, disabled }: QuestionFieldProps) => {
             id={`question-${question.id}-option-${optIndex}`}
             inline
             value={option}
-            label={option}
+            label={`${option}${formatOptionPrice(question.prices?.[optIndex])}`}
             required={question.required}
             disabled={disabled}
             checked={currentAnswerString === option}
