@@ -4,14 +4,11 @@ import { Form } from "react-bootstrap";
 import { UseFieldConfig } from "react-final-form";
 import { useTranslation } from "react-i18next";
 
-import { PaymentMode } from "@tietokilta/ilmomasiina-models";
 import FieldRow from "../../../components/FieldRow";
-import { EditorEventType } from "../../../modules/editor/types";
 import useEditorErrors from "./errors";
 import { useFieldValue } from "./hooks";
 import LanguageSelect from "./LanguageSelect";
 import Quotas from "./Quotas";
-import SelectBox from "./SelectBox";
 
 const numberConfig: UseFieldConfig<number | null> = {
   parse: (value) => (value ? Number(value) : null),
@@ -19,25 +16,11 @@ const numberConfig: UseFieldConfig<number | null> = {
 
 const QuotasTab = () => {
   const useOpenQuota = useFieldValue<boolean>("useOpenQuota");
-  const eventType = useFieldValue<EditorEventType>("eventType");
   const { t } = useTranslation();
   const formatError = useEditorErrors();
   return (
     <div>
       <LanguageSelect />
-      {eventType !== EditorEventType.ONLY_EVENT && (
-        <FieldRow
-          name="payments"
-          label={t("editor.basic.payments")}
-          as={SelectBox}
-          options={[
-            [PaymentMode.DISABLED, t("editor.basic.payments.disabled")],
-            [PaymentMode.MANUAL, t("editor.basic.payments.manual")],
-            [PaymentMode.ONLINE, t("editor.basic.payments.online")],
-          ]}
-          formatError={formatError}
-        />
-      )}
       <Quotas />
       <FieldRow
         name="useOpenQuota"
