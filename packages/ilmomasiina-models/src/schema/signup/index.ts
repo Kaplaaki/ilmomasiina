@@ -3,6 +3,7 @@ import { Static, Type } from "typebox";
 import { quotaID } from "../quota/attributes";
 import { Nullable } from "../utils";
 import {
+  adminDynamicSignupAttributes,
   editableSignupAttributes,
   editToken,
   publicDynamicSignupAttributes,
@@ -55,7 +56,7 @@ export const publicSignupSchema = Type.Interface([publicEditableSignupAttributes
 
 /** Schema for signups in event details from the admin API. */
 export const adminSignupSchema = Type.Interface(
-  [signupIdentity, editableSignupAttributes, publicDynamicSignupAttributes],
+  [signupIdentity, editableSignupAttributes, adminDynamicSignupAttributes],
   {},
 );
 
