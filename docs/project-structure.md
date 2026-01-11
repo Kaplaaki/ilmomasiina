@@ -35,13 +35,12 @@ project's `package.json` specifies `--workspace-concurrency=1` to prevent pnpm f
 
 The project is divided into four packages. Source folders are listed under each, roughly in order of importance.
 
-- `ilmomasiina-models` contains the single source of truth for the data model and API:
+- `ilmomasiina-models` contains the single source of truth for the API data model:
     - `src/schema`: TypeBox OpenAPI schema for the API layer.
-    - `src/models`: The JS column types for DB models. These are implemented by the Sequelize models in `ilmomasiina-backend`.
-    - `src/attrs`: Defines the attribute names used included in responses, passed to Sequelize `attributes`.
 - `ilmomasiina-backend` contains the backend code and depends on `ilmomasiina-models`.
     - `src/config.ts`: Config loading and validation. All environment variable access goes through here.
     - `src/models`: Sequelize models implementing the interfaces from `ilmomasiina-models`.
+    - `src/models/attrs.ts`: Defines the attribute names picked from the DB, passed to Sequelize `attributes`.
     - `src/routes`: API route implementations. Most code goes here.
     - `src/cron`: Functions that run periodical maintenance tasks.
     - `src/locales`: Locale files for things like email subjects.
@@ -68,18 +67,17 @@ The project is divided into four packages. Source folders are listed under each,
 
 ### Source of truth for models
 
-The source of truth for *database models* is currently split between:
+The source of truth for *database models* is `ilmomasiina-backend/src/models`. Each of the files therein contains
+multiple copies of the attributes:
 
-- `ilmomasiina-models/src/models` contains the TypeScript interfaces for the *database* rows.
-  - These will be moved into the below `ilmomasiina-backend` files in 3.0 as they serve no real purpose here.
-- `ilmomasiina-backend/src/models` contains the Sequelize model definitions that implement the interfaces from
-  `ilmomasiina-models/src/models`.
-  - Each of these files first (re)defines the attributes as `public attribute!: type;` members of the class, and then
-    defines a `setupFooModel` function that calls `Model.init(...)`. These must match
-  - Errors *ARE NOT* raised by TS if extra attributes are defined in the class body, or if the attribute *types* in
-    `Model.init` do not match.
-  - Errors *are* raised if attributes are missing from the class body, or if the attributes in `Model.init` do not
-    match the *names* defined in `ilmomasiina-models/src/models`.
+- A `FooAttributes` interface to act as the source of truth.
+- A `FooCreationAttributes` interface with auto-generatable attributes `Omit`ted.
+- A Sequelize model class with attributes redeclared as `public attribute!: type;` to implement the interface.
+- A `setupFooModel` function that calls `Model.init(...)`.
+- Errors *ARE NOT* raised by TS if extra attributes are defined in the class body, or if the attribute *types* in
+  `Model.init` do not match those in `FooAttributes`. These must be kept in sync manually.
+- Errors *are* raised if attributes in `FooAttributes` are missing from the class body, or if the attributes in
+  `Model.init` do not match the *names* in `FooAttributes`.
 
 The source of truth for *API models* is in `ilmomasiina-models/src/schema`, which contains TypeBox schemas (and
 corresponding `Static<>` TypeScript types) that define requests and responses.

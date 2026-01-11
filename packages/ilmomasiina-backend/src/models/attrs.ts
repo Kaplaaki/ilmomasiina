@@ -1,10 +1,8 @@
-import type {
-  AnswerAttributes,
-  EventAttributes,
-  QuestionAttributes,
-  QuotaAttributes,
-  SignupAttributes,
-} from "../models";
+import type { AnswerAttributes } from "./answer";
+import type { EventAttributes } from "./event";
+import type { QuestionAttributes } from "./question";
+import type { QuotaAttributes } from "./quota";
+import type { SignupAttributes } from "./signup";
 
 /** Attributes included in GET /api/events/slug for Event instances. */
 export const eventGetEventAttrs: (keyof EventAttributes)[] = [

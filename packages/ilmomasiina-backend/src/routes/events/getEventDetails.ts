@@ -12,6 +12,7 @@ import {
   UserEventPathParams,
   UserEventResponse,
 } from "@tietokilta/ilmomasiina-models";
+import { Answer } from "../../models/answer";
 import {
   adminEventGetEventAttrs,
   adminEventGetSignupAttrs,
@@ -20,9 +21,9 @@ import {
   eventGetQuestionAttrs,
   eventGetQuotaAttrs,
   eventGetSignupAttrs,
-} from "@tietokilta/ilmomasiina-models/dist/attrs/event";
-import { Answer } from "../../models/answer";
+} from "../../models/attrs";
 import { Event } from "../../models/event";
+import { Payment } from "../../models/payment";
 import { Question } from "../../models/question";
 import { Quota } from "../../models/quota";
 import { Signup } from "../../models/signup";
@@ -165,7 +166,7 @@ export function formatSignupForAdmin(signup: Signup): AdminSignupSchema {
     ...plain,
     answers: signup.answers!.map((answer) => answer.get({ plain: true })),
     confirmed: Boolean(signup.confirmedAt),
-    paymentStatus: signup.activePayment?.status ?? null,
+    paymentStatus: signup.activePayment ? Signup.paymentStatusMap[signup.activePayment.status] : null,
   };
   return result as unknown as StringifyApi<typeof result>;
 }
@@ -207,6 +208,11 @@ export async function eventDetailsForAdmin(eventID: EventID): Promise<AdminEvent
           {
             model: Answer,
             attributes: eventGetAnswerAttrs,
+            required: false,
+          },
+          {
+            model: Payment.scope("active"),
+            attributes: ["status"],
             required: false,
           },
         ],

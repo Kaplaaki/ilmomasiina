@@ -19,12 +19,23 @@ import {
 } from "sequelize";
 
 import { QuestionCreate, QuestionType } from "@tietokilta/ilmomasiina-models";
-import type { QuestionAttributes } from "@tietokilta/ilmomasiina-models/dist/models";
 import type { Answer } from "./answer";
 import { EventValidationError } from "./errors";
 import type { Event } from "./event";
 import { generateRandomId, RANDOM_ID_LENGTH } from "./randomId";
 import { jsonColumnGetter } from "./util/json";
+
+export interface QuestionAttributes {
+  id: string;
+  order: number;
+  question: string;
+  type: QuestionType;
+  options: string[] | null;
+  prices: number[] | null;
+  required: boolean;
+  public: boolean;
+  eventId: Event["id"];
+}
 
 export interface QuestionCreationAttributes extends Optional<
   QuestionAttributes,

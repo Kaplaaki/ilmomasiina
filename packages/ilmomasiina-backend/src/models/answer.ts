@@ -8,11 +8,17 @@ import {
   Sequelize,
 } from "sequelize";
 
-import type { AnswerAttributes } from "@tietokilta/ilmomasiina-models/dist/models";
 import type { Question } from "./question";
 import { RANDOM_ID_LENGTH } from "./randomId";
 import { Signup } from "./signup";
 import { jsonColumnGetter } from "./util/json";
+
+export interface AnswerAttributes {
+  id: string;
+  answer: string | string[];
+  questionId: Question["id"];
+  signupId: Signup["id"];
+}
 
 export interface AnswerCreationAttributes extends Optional<AnswerAttributes, "id"> {}
 
