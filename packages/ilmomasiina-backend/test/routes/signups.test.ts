@@ -1,7 +1,7 @@
 import { testEvent, testSignups } from "test/testData";
 import { describe, expect, test } from "vitest";
 
-import { EDIT_TOKEN_HEADER, SignupForEditResponse } from "@tietokilta/ilmomasiina-models";
+import { EDIT_TOKEN_HEADER, SignupForEditResponse, SignupPaymentStatus } from "@tietokilta/ilmomasiina-models";
 import config from "../../src/config";
 import { Signup } from "../../src/models/signup";
 import { refreshSignupPositionsAndGet } from "../../src/routes/signups/computeSignupPosition";
@@ -56,6 +56,7 @@ describe("getSignupForEdit", () => {
         price: expect.any(Number),
         currency: config.currency,
         products: expect.any(Array),
+        paymentStatus: expect.toBeOneOf([SignupPaymentStatus.PENDING, null]),
       },
     });
   });

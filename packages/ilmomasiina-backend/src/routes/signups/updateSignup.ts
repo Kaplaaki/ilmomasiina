@@ -28,9 +28,9 @@ import { refreshSignupPositions } from "./computeSignupPosition";
 import { signupEditable } from "./createNewSignup";
 import { NoSuchQuota, NoSuchSignup, SignupsClosed, SignupValidationError } from "./errors";
 
-/** Computes product lines for a given quota. */
+/** Computes product lines for a given quota. `quota.event` must be present. */
 export function getQuotaProducts(quota: Quota): ProductSchema[] {
-  if (quota.price) {
+  if (quota.event!.paymentsEnabled && quota.price) {
     return [
       {
         name: quota.title,
@@ -50,12 +50,12 @@ export function getQuotaProducts(quota: Quota): ProductSchema[] {
  * If `admin` is false and `answerErrors` is returned, other returned values are not valid and should not be used.
  */
 export function validateAnswersAndGetProducts(
-  event: Pick<Event, "questions" | "languages">,
+  event: Pick<Event, "paymentsEnabled" | "questions" | "languages">,
   rawAnswers: SignupUpdateBody["answers"] | undefined,
   admin: boolean,
 ) {
   let answerErrors: Record<string, SignupFieldError> | undefined;
-  const answerProducts: ProductSchema[] = [];
+  const answerProducts: ProductSchema[] | null = event.paymentsEnabled ? [] : null;
 
   const newAnswers = event.questions!.map((question, index) => {
     // Fetch the answer to this question from the request body
@@ -70,7 +70,8 @@ export function validateAnswersAndGetProducts(
       if (question.options) {
         validOptions.push(...question.options);
 
-        if (question.prices) {
+        // Question.prices are normalized to null when they are all zero, so any option prices being set implies prices exist.
+        if (event.paymentsEnabled && question.prices) {
           question.options.forEach((opt, i) => {
             optionPrices.set(opt, question.prices![i] ?? 0);
           });
@@ -86,7 +87,7 @@ export function validateAnswersAndGetProducts(
           const localizedOptions = localized.options.filter(Boolean);
           validOptions.push(...localizedOptions);
 
-          if (question.prices) {
+          if (event.paymentsEnabled && question.prices) {
             localized.options.forEach((opt, i) => {
               optionPrices.set(opt, question.prices![i] ?? 0);
             });
@@ -120,7 +121,7 @@ export function validateAnswersAndGetProducts(
             // even if the option is free.
             const price = optionPrices.get(option);
             if (price != null) {
-              answerProducts.push({
+              answerProducts?.push({
                 name: option,
                 amount: 1,
                 unitPrice: price,
@@ -158,7 +159,7 @@ export function validateAnswersAndGetProducts(
               // even if the option is free.
               const price = optionPrices.get(answer);
               if (price != null) {
-                answerProducts.push({
+                answerProducts?.push({
                   name: answer,
                   amount: 1,
                   unitPrice: price,
@@ -184,7 +185,11 @@ export function validateAnswersAndGetProducts(
     };
   });
 
-  return { newAnswers, answerProducts, answerErrors };
+  return {
+    newAnswers,
+    answerProducts: answerProducts ?? [],
+    answerErrors,
+  };
 }
 
 /** Given product lines, computes the final price-related attributes for a signup. */

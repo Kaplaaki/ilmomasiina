@@ -2,8 +2,8 @@ import { describe, expect, test } from "vitest";
 
 import type { QuestionLanguage } from "@tietokilta/ilmomasiina-models";
 import { QuestionType, SignupFieldError } from "@tietokilta/ilmomasiina-models";
-import type { QuestionAttributes } from "@tietokilta/ilmomasiina-models/dist/models";
 import type { Event } from "../../../src/models/event";
+import type { QuestionAttributes } from "../../../src/models/question";
 import { validateAnswersAndGetProducts } from "../../../src/routes/signups/updateSignup";
 
 /** Wrapper to test validation and product generation for a single question. */
@@ -21,9 +21,10 @@ function validateQuestion(
     : {};
 
   const event = {
+    paymentsEnabled: true,
     questions: [question],
     languages,
-  } as Pick<Event, "questions" | "languages">;
+  } as Pick<Event, "paymentsEnabled" | "questions" | "languages">;
 
   const rawAnswers =
     answer === undefined

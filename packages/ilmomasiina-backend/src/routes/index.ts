@@ -342,6 +342,43 @@ async function setupPublicRoutes(fastifyInstance: FastifyInstance) {
     deleteSignupAsUser,
   );
 
+  server.post<{ Params: schema.SignupPathParams }>(
+    "/signups/:id/payment/start",
+    {
+      schema: {
+        params: schema.signupPathParams,
+        response: {
+          ...errorResponses,
+          200: schema.startPaymentResponse,
+        },
+      },
+      // Require valid edit token:
+      preHandler: requireValidEditToken,
+    },
+    /* TODO */ () => {},
+  );
+
+  server.post<{ Params: schema.SignupPathParams; Body: schema.CompletePaymentBody }>(
+    "/signups/:id/payment/complete",
+    {
+      schema: {
+        params: schema.signupPathParams,
+        body: schema.completePaymentBody,
+        response: {
+          ...errorResponses,
+          200: schema.signupForEditResponse,
+        },
+      },
+      // Require valid edit token:
+      preHandler: requireValidEditToken,
+    },
+    /* TODO */ () => {},
+  );
+
+  // Stripe webhook
+
+  server.post("/stripe/webhook", {}, /* TODO */ () => {});
+
   // Admin session management routes
 
   server.post<{ Body: schema.AdminLoginBody }>(

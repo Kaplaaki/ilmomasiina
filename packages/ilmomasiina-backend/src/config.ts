@@ -165,6 +165,12 @@ if (!process.env.PORT && config.nodeEnv === "production") {
   throw new Error("Env variable PORT must be set in production");
 }
 
+if (config.dbDialect !== "postgres") {
+  throw new Error(
+    "Only PostgreSQL is supported by Ilmomasiina 3.0. MySQL migration tools will be provided in a future Ilmomasiina 2.x version.",
+  );
+}
+
 if (config.frontendFilesPath === null) {
   if (process.env.FRONTEND_FILES_PATH === "") {
     console.info("Frontend serving disabled in backend.");

@@ -1,18 +1,24 @@
 import { faker } from "@faker-js/faker";
-import { afterAll, afterEach, beforeAll, beforeEach, TaskBase, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, RunnerTaskBase, vi } from "vitest";
 
 import initApp from "../src/app";
 import EmailService from "../src/mail";
 import setupDatabase, { closeDatabase } from "../src/models";
+import { AuditLog } from "../src/models/auditlog";
+import { Event } from "../src/models/event";
+import { Payment } from "../src/models/payment";
+import { User } from "../src/models/user";
 import { testUser } from "./testData";
 
-const needsDb = (suite: TaskBase) => suite.name.includes("test/routes");
-const needsApi = (suite: TaskBase) => suite.name.includes("test/routes");
+const needsDb = (suite: RunnerTaskBase) => suite.name.includes("test/routes");
+const needsApi = (suite: RunnerTaskBase) => suite.name.includes("test/routes");
 
 // Common setup for all backend test files: initialize Sequelize & Fastify, tear down at test end.
 beforeAll(async (suite) => {
   if (needsDb(suite)) {
     global.sequelize = await setupDatabase();
+    // Drop the trigger that prevents deleting payments to allow test data to be reset.
+    await global.sequelize.query("DROP TRIGGER IF EXISTS payment_prevent_delete ON payment;");
   } else {
     global.sequelize = undefined as any;
   }
@@ -39,10 +45,11 @@ beforeEach(async () => {
 
   if (sequelize) {
     // Delete test data that can conflict between tests.
-    await sequelize.getQueryInterface().bulkDelete("user", {}, { truncate: true, cascade: true } as any);
+    await User.truncate({ cascade: true, force: true });
+    await Payment.truncate({ cascade: true, force: true });
     // Event truncation cascades to all other event data:
-    await sequelize.getQueryInterface().bulkDelete("event", {}, { truncate: true, cascade: true } as any);
-    await sequelize.getQueryInterface().bulkDelete("auditlog", {}, { truncate: true, cascade: true } as any);
+    await Event.truncate({ cascade: true, force: true });
+    await AuditLog.truncate({ cascade: true, force: true });
 
     // Create a test user to ensure full functionality.
     global.adminUser = await testUser();

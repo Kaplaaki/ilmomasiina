@@ -152,6 +152,10 @@ export class Event extends Model<EventManualAttributes, EventCreationAttributes>
     return endDates.reduce((lhs, rhs) => Math.max(lhs, rhs));
   }
 
+  public get paymentsEnabled(): boolean {
+    return this.payments !== PaymentMode.DISABLED;
+  }
+
   /** Validates that the languages for the event contain match the given questions and quotas.
    *
    * Removes answer options from questions that do not have them defined in the default language.

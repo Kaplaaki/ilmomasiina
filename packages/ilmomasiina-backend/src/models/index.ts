@@ -104,17 +104,18 @@ export default async function setupDatabase() {
     foreignKey: {
       allowNull: false,
     },
+    // Deleting/renumbering payments is not allowed anyway, but this shouldn't hurt.
     // TODO: How should we handle signup deletion when payments exist?
     onUpdate: "RESTRICT",
     onDelete: "RESTRICT",
   });
   Payment.belongsTo(Signup);
-  Signup.belongsTo(Payment, {
+  Signup.hasOne(Payment.scope("active"), {
     as: "activePayment",
     foreignKey: {
-      allowNull: true,
+      name: "signupId",
+      allowNull: false,
     },
-    // Deleting/renumbering payments is not allowed anyway, but this shouldn't hurt.
     onUpdate: "RESTRICT",
     onDelete: "RESTRICT",
   });

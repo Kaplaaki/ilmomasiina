@@ -1,16 +1,31 @@
-import { DataTypes, Model, Optional, Sequelize } from "sequelize";
+import { DataTypes, Model, Op, Optional, Sequelize } from "sequelize";
 
-import { PaymentStatus } from "@tietokilta/ilmomasiina-models/dist/enum";
-import { PaymentAttributes } from "@tietokilta/ilmomasiina-models/dist/models";
+import { PaymentStatus, ProductSchema } from "@tietokilta/ilmomasiina-models";
 import { jsonColumnGetter } from "./util/json";
+
+export interface PaymentAttributes {
+  id: number;
+  signupId: string;
+  stripeCheckoutSessionId: string | null;
+  status: PaymentStatus;
+  amount: number;
+  currency: string;
+  products: ProductSchema[];
+  createdAt: Date;
+  updatedAt: Date;
+  expiresAt: Date;
+  completedAt: Date | null;
+}
 
 // TODO: This is a bit unconsistent with other models, since others don't define createdAt at all in
 //  the FooAttributes interface. It still shouldn't be passed to Model<> since we want the Sequelize
 //  defaults for it.
 interface PaymentManualAttributes extends Omit<PaymentAttributes, "createdAt" | "updatedAt"> {}
 
-export interface PaymentCreateAttributes
-  extends Optional<PaymentManualAttributes, "id" | "stripeCheckoutSessionId" | "status" | "completedAt"> {}
+export interface PaymentCreateAttributes extends Optional<
+  PaymentManualAttributes,
+  "id" | "stripeCheckoutSessionId" | "status" | "completedAt"
+> {}
 
 export class Payment extends Model<PaymentManualAttributes, PaymentCreateAttributes> implements PaymentAttributes {
   public id!: number;
@@ -19,7 +34,7 @@ export class Payment extends Model<PaymentManualAttributes, PaymentCreateAttribu
   public status!: PaymentStatus;
   public amount!: number;
   public currency!: string;
-  public products!: unknown;
+  public products!: ProductSchema[];
 
   public readonly createdAt!: Date;
   public readonly updatedAt!: Date;
@@ -48,7 +63,7 @@ export default function setupPaymentModel(sequelize: Sequelize) {
       status: {
         type: DataTypes.ENUM(...Object.values(PaymentStatus)),
         allowNull: false,
-        defaultValue: PaymentStatus.PENDING,
+        defaultValue: PaymentStatus.CREATING,
       },
       amount: {
         type: DataTypes.INTEGER,
@@ -79,8 +94,13 @@ export default function setupPaymentModel(sequelize: Sequelize) {
       sequelize,
       modelName: "payment",
       freezeTableName: true,
-      // TODO: We eventually don't want to allow deletion at all, but this won't hurt until we migrate to Postgres only.
-      paranoid: true,
+      scopes: {
+        active: {
+          where: {
+            status: { [Op.in]: [PaymentStatus.CREATING, PaymentStatus.PENDING, PaymentStatus.PAID] },
+          },
+        },
+      },
     },
   );
 }

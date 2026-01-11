@@ -1,32 +1,21 @@
 import { Static, Type } from "typebox";
-import Stripe from "stripe";
 
-import { userEventForSignup } from "../event";
-import { signupID } from "../signup";
-import { editToken } from "../signup/attributes";
-import { signupForEdit } from "../signupForEdit";
-
-/** Request body for creating a payment. */
-export const paymentCreateParams = Type.Object({
-  id: signupID,
-  editToken,
-});
-export const paymentPathParams = Type.Object({
-  id: signupID,
+/** Response schema for starting a payment. */
+export const startPaymentResponse = Type.Object({
+  paymentUrl: Type.String({
+    format: "uri",
+    description: "The URL where the user can complete the payment.",
+  }),
 });
 
-export type PaymentCreateParams = Static<typeof paymentCreateParams>;
-export type PaymentPathParams = Static<typeof paymentPathParams>;
-export type PaymentResponse = Stripe.Checkout.Session;
-
-export const signupPaymentResponse = Type.Object({
-  signup: signupForEdit,
-  event: userEventForSignup,
-  payment: Type.Unknown(),
+/** Request body for completing a payment. */
+export const completePaymentBody = Type.Object({
+  paymentId: Type.String({
+    description: "The ID of the payment being completed.",
+  }),
 });
 
-export interface SignupPaymentResponse {
-  signup: Static<typeof signupForEdit>;
-  event: Static<typeof userEventForSignup>;
-  payment: PaymentResponse;
-}
+/** Response schema for starting a payment. */
+export type StartPaymentResponse = Static<typeof startPaymentResponse>;
+/** Request body for completing a payment. */
+export type CompletePaymentBody = Static<typeof completePaymentBody>;

@@ -13,10 +13,30 @@ export enum PaymentStatus {
   PENDING = "pending",
   /** The payment has been successfully completed. */
   PAID = "paid",
-  /** The payment has been canceled. */
-  CANCELED = "canceled",
+  /** The payment has expired or has been canceled. */
+  EXPIRED = "expired",
   /** Creating the payment in the payment processor has failed. */
   CREATION_FAILED = "creation_failed",
+  /** The payment has been refunded by an admin. */
+  REFUNDED = "refunded",
+}
+
+/** Possible effective payment statuses for signups. */
+export enum SignupPaymentStatus {
+  /** The payment is required but not yet completed. */
+  PENDING = "pending",
+  /** The payment has been successfully completed. */
+  PAID = "paid",
+  /** The payment has been refunded. */
+  REFUNDED = "refunded",
+}
+
+/** Possible manual (admin-managed) payment statuses for signups. */
+export enum ManualPaymentStatus {
+  /** The signup has been paid externally. */
+  PAID = "paid",
+  /** The signup has been refunded externally. */
+  REFUNDED = "refunded",
 }
 
 /** Possible question types. */

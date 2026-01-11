@@ -1,8 +1,5 @@
 import moment from "moment";
 import {
-  BelongsToCreateAssociationMixin,
-  BelongsToGetAssociationMixin,
-  BelongsToSetAssociationMixin,
   DataTypes,
   HasManyAddAssociationMixin,
   HasManyAddAssociationsMixin,
@@ -23,7 +20,13 @@ import {
   Sequelize,
 } from "sequelize";
 
-import { ProductSchema, SignupStatus } from "@tietokilta/ilmomasiina-models";
+import {
+  ManualPaymentStatus,
+  PaymentStatus,
+  ProductSchema,
+  SignupPaymentStatus,
+  SignupStatus,
+} from "@tietokilta/ilmomasiina-models";
 import config from "../config";
 import type { Answer } from "./answer";
 import type { Payment } from "./payment";
@@ -47,6 +50,8 @@ export interface SignupAttributes {
   currency: string | null;
   /** The product lines used to calculate the price. */
   products: ProductSchema[] | null;
+  /** Payment status set manually by an admin, without creating a Payment record. */
+  manualPaymentStatus: ManualPaymentStatus | null;
   createdAt: Date;
   quotaId: Quota["id"];
 }
@@ -65,7 +70,7 @@ export interface SignupCreationAttributes extends Optional<
   | "price"
   | "currency"
   | "products"
-  | "activePaymentId"
+  | "manualPaymentStatus"
   | "createdAt"
 > {}
 
@@ -82,6 +87,7 @@ export class Signup extends Model<SignupAttributes, SignupCreationAttributes> im
   public price!: number | null;
   public currency!: string | null;
   public products!: ProductSchema[] | null;
+  public manualPaymentStatus!: ManualPaymentStatus | null;
 
   public quotaId!: Quota["id"];
   public quota?: Quota;
@@ -101,16 +107,13 @@ export class Signup extends Model<SignupAttributes, SignupCreationAttributes> im
   public removeAnswers!: HasManyRemoveAssociationsMixin<Answer, Answer["id"]>;
   public createAnswer!: HasManyCreateAssociationMixin<Answer>;
 
-  // TODO: This is a bit of a hack to ensure active payments are unique within MySQL via locking.
-  //  Once we migrate to Postgres-only, we might use a partial UNIQUE index on Payments instead.
-  public activePaymentId!: Payment["id"] | null;
-  public activePayment?: Payment;
-  public getActivePayment!: BelongsToGetAssociationMixin<Payment>;
-  public setActivePayment!: BelongsToSetAssociationMixin<Payment, Payment["id"]>;
-  public createActivePayment!: BelongsToCreateAssociationMixin<Payment>;
-
   public readonly createdAt!: Date;
   public readonly updatedAt!: Date;
+
+  public readonly activePayment?: Payment | null;
+  public getActivePayment!: HasOneGetAssociationMixin<Payment>;
+  public setActivePayment!: HasOneSetAssociationMixin<Payment, Payment["id"]>;
+  public createActivePayment!: HasOneCreateAssociationMixin<Payment>;
 
   public static readonly MAX_NAME_LENGTH = 255;
   public static readonly MAX_EMAIL_LENGTH = 255; // TODO
@@ -126,6 +129,38 @@ export class Signup extends Model<SignupAttributes, SignupCreationAttributes> im
       ? new Date(this.createdAt.getTime() + config.signupConfirmMins * 60 * 1000)
       : this.createdAt;
   }
+
+  public get hasPrice(): boolean {
+    return this.price != null && this.price > 0;
+  }
+
+  public get effectivePaymentStatus(): SignupPaymentStatus | null {
+    // If the signup is paid either online or manually, it's paid.
+    if (this.activePayment?.status === PaymentStatus.PAID || this.manualPaymentStatus === ManualPaymentStatus.PAID)
+      return SignupPaymentStatus.PAID;
+    // If there is no need to pay, don't check further.
+    if (!this.hasPrice) return null;
+    // If an active payment exists, use its status.
+    if (this.activePayment != null) return Signup.paymentStatusMap[this.activePayment.status];
+    // If the manual payment is set, use that.
+    if (this.manualPaymentStatus != null) return Signup.manualPaymentStatusMap[this.manualPaymentStatus];
+    // Finally, if neither is set, but the signup has a price, it's pending.
+    return SignupPaymentStatus.PENDING;
+  }
+
+  public static readonly paymentStatusMap: Record<PaymentStatus, SignupPaymentStatus> = {
+    [PaymentStatus.CREATING]: SignupPaymentStatus.PENDING,
+    [PaymentStatus.PENDING]: SignupPaymentStatus.PENDING,
+    [PaymentStatus.PAID]: SignupPaymentStatus.PAID,
+    [PaymentStatus.EXPIRED]: SignupPaymentStatus.PENDING,
+    [PaymentStatus.CREATION_FAILED]: SignupPaymentStatus.PENDING,
+    [PaymentStatus.REFUNDED]: SignupPaymentStatus.REFUNDED,
+  };
+
+  public static readonly manualPaymentStatusMap: Record<ManualPaymentStatus, SignupPaymentStatus> = {
+    [ManualPaymentStatus.PAID]: SignupPaymentStatus.PAID,
+    [ManualPaymentStatus.REFUNDED]: SignupPaymentStatus.REFUNDED,
+  };
 }
 
 export default function setupSignupModel(sequelize: Sequelize) {
@@ -190,8 +225,8 @@ export default function setupSignupModel(sequelize: Sequelize) {
         allowNull: true,
         get: jsonColumnGetter<ProductSchema[]>("products"),
       },
-      activePaymentId: {
-        type: DataTypes.INTEGER.UNSIGNED,
+      manualPaymentStatus: {
+        type: DataTypes.ENUM(...Object.values(ManualPaymentStatus)),
         allowNull: true,
       },
       // Add createdAt manually to support milliseconds

@@ -37,9 +37,10 @@ if (clearDbUrl) {
 }
 
 // Add extra options
-const sequelizeConfig = {
+const sequelizeConfig: Options = {
   ...auth,
   logging: debugDbLogging,
+  benchmark: debugDbLogging,
 };
 
 export = {

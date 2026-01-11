@@ -4,18 +4,12 @@ import moment from "moment";
 import { Optional, UniqueConstraintError } from "sequelize";
 
 import { PaymentMode, QuestionType, QuotaID } from "@tietokilta/ilmomasiina-models";
-import {
-  EventAttributes,
-  QuestionAttributes,
-  QuotaAttributes,
-  SignupAttributes,
-} from "@tietokilta/ilmomasiina-models/dist/models";
 import config from "../src/config";
 import { Answer, AnswerCreationAttributes } from "../src/models/answer";
-import { Event } from "../src/models/event";
-import { Question, QuestionCreationAttributes } from "../src/models/question";
-import { Quota } from "../src/models/quota";
-import { Signup, SignupCreationAttributes } from "../src/models/signup";
+import { Event, EventAttributes } from "../src/models/event";
+import { Question, QuestionAttributes, QuestionCreationAttributes } from "../src/models/question";
+import { Quota, QuotaAttributes } from "../src/models/quota";
+import { Signup, SignupAttributes, SignupCreationAttributes } from "../src/models/signup";
 import { User } from "../src/models/user";
 import { computePrice, getQuotaProducts, validateAnswersAndGetProducts } from "../src/routes/signups/updateSignup";
 
@@ -178,6 +172,10 @@ export async function testEvent(options: TestEventOptions = {}, overrides: Parti
       ...options.quotaOverrides,
     })),
   );
+  for (const quota of event.quotas) {
+    // Populate backlink to event
+    quota.event = event;
+  }
   return event;
 }
 
@@ -293,8 +291,7 @@ export async function testSignups(
   // Actually create signups.
   const signups = await Signup.bulkCreate(signupValues);
   // Add signup IDs to answers and create them.
-  // TODO: This may not work in MySQL, since it doesn't return us the IDs from bulkCreate (per Sequelize docs).
-  //  However, since we're only testing against Postgres and getting rid of MySQL soon, this is fine for now.
+  // (Note: This would not work in MySQL, since it doesn't return us the IDs from Signup.bulkCreate.)
   await Answer.bulkCreate(
     answerValues.flatMap((answers, i) =>
       answers.map((ans) => ({

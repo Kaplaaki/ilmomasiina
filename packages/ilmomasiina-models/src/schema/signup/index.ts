@@ -4,8 +4,9 @@ import { quotaID } from "../quota/attributes";
 import { Nullable } from "../utils";
 import {
   adminDynamicSignupAttributes,
-  editableSignupAttributes,
+  adminEditableSignupAttributes,
   editToken,
+  ownerEditableSignupAttributes,
   publicDynamicSignupAttributes,
   publicEditableSignupAttributes,
   signupID,
@@ -38,11 +39,11 @@ const adminSignupUpdateOptions = Type.Object({
 });
 
 /** Request body for editing an existing signup. */
-export const signupUpdateBody = Type.Partial(Type.Interface([editableSignupAttributes, signupLanguage], {}));
+export const signupUpdateBody = Type.Partial(Type.Interface([ownerEditableSignupAttributes, signupLanguage], {}));
 
 /** Request body for editing an existing signup as an admin. */
 export const adminSignupUpdateBody = Type.Partial(
-  Type.Interface([editableSignupAttributes, signupLanguage, adminSignupUpdateOptions], {}),
+  Type.Interface([adminEditableSignupAttributes, signupLanguage, adminSignupUpdateOptions], {}),
 );
 
 /** Request body for creating a signup as an admin. */
@@ -56,7 +57,7 @@ export const publicSignupSchema = Type.Interface([publicEditableSignupAttributes
 
 /** Schema for signups in event details from the admin API. */
 export const adminSignupSchema = Type.Interface(
-  [signupIdentity, editableSignupAttributes, adminDynamicSignupAttributes],
+  [signupIdentity, adminEditableSignupAttributes, adminDynamicSignupAttributes],
   {},
 );
 

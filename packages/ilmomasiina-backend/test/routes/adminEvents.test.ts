@@ -213,6 +213,8 @@ describe("GET /api/admin/events/:id", () => {
         currency: firstSignup.currency,
         status: null,
         position: null,
+        paymentStatus: null,
+        manualPaymentStatus: null,
       });
 
       const foundSignup = found!.signups.find((signup) => signup.id === firstSignup.id);
