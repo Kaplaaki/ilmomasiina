@@ -14,22 +14,26 @@ export default async function sendSignupConfirmationMail(
 ) {
   if (signup.email === null) return;
 
-  const lng = signup.language ?? undefined;
+  const lng = signup.language ?? config.defaultLanguage;
 
-  // TODO: convert to include
+  // TODO: convert these to include?
+  // eslint-disable-next-line no-param-reassign
+  signup.activePayment = await signup.getActivePayment();
   const answers = await signup.getAnswers();
   const quota = await signup.getQuota();
   const event = await quota.getEvent();
   const questions = await event.getQuestions();
 
+  const localeQuestions = event.languages[lng]?.questions ?? questions;
+
   // Show name only if filled
   const fullName = `${signup.firstName ?? ""} ${signup.lastName ?? ""}`.trim();
 
   const questionFields = questions
-    .map((question) => <const>[question, answers.find((answer) => answer.questionId === question.id)])
-    .filter(([, answer]) => answer)
-    .map(([question, answer]) => ({
-      label: question.question,
+    .map((question, index) => [index, question, answers.find((answer) => answer.questionId === question.id)] as const)
+    .filter(([, , answer]) => answer)
+    .map(([index, question, answer]) => ({
+      label: localeQuestions[index]?.question || question.question,
       answer: Array.isArray(answer!.answer) ? answer!.answer.join(", ") : answer!.answer,
     }));
 
@@ -45,6 +49,7 @@ export default async function sendSignupConfirmationMail(
     quota: quota.title,
     answers: questionFields,
     queuePosition: signup.status === SignupStatus.IN_QUEUE ? signup.position : null,
+    paymentStatus: signup.effectivePaymentStatus,
     type,
     admin,
     date,
