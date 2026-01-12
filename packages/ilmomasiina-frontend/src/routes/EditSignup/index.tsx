@@ -35,13 +35,13 @@ const EditSignupView = () => {
   return <EditForm />;
 };
 
-const EditSignup = () => {
+const EditSignup = ({ paid = false }: { paid?: boolean }) => {
   const { id, editToken } = useParams<"id" | "editToken">();
   const {
     i18n: { language },
   } = useTranslation();
   return (
-    <EditSignupProvider id={id!} editToken={editToken!} language={language}>
+    <EditSignupProvider id={id!} editToken={editToken!} paid={paid} language={language}>
       <EditSignupView />
     </EditSignupProvider>
   );

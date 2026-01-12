@@ -42,3 +42,9 @@ export class PaymentNotComplete extends CustomError {
     super(400, ErrorCode.PAYMENT_NOT_COMPLETE, message);
   }
 }
+
+export class PaymentRateLimited extends CustomError {
+  constructor(message: string) {
+    super(429, ErrorCode.PAYMENT_RATE_LIMITED, message);
+  }
+}

@@ -166,7 +166,7 @@ export function formatSignupForAdmin(signup: Signup): AdminSignupSchema {
     ...plain,
     answers: signup.answers!.map((answer) => answer.get({ plain: true })),
     confirmed: Boolean(signup.confirmedAt),
-    paymentStatus: signup.activePayment ? Signup.paymentStatusMap[signup.activePayment.status] : null,
+    paymentStatus: signup.effectivePaymentStatus,
   };
   return result as unknown as StringifyApi<typeof result>;
 }

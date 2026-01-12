@@ -207,7 +207,7 @@
     "editor.basic.signupsPublic.check": "Ilmoittautumiset ovat julkisia",
     "editor.basic.signupsPublic.info": "Ilmoittautuja saa päättää, näkyykö hänen nimensä julkisesti. Vastaukset julkisiin kysymyksiin ovat aina julkisia.",
     "editor.basic.payments": "Maksut",
-    "editor.basic.payments.disabled": "Ei maksuja Ilmomasiinanassa",
+    "editor.basic.payments.disabled": "Ei maksuja Ilmomasiinassa",
     "editor.basic.payments.manual": "Laske hinnat, vastaanota maksut käsin",
     "editor.basic.payments.online": "Vastaanota maksut Ilmomasiinassa",
     "editor.quotas.addQuota": "Lisää kiintiö",

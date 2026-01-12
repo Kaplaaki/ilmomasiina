@@ -1,6 +1,6 @@
 import React, { PropsWithChildren, useMemo } from "react";
 
-import type { SignupForEditResponse } from "@tietokilta/ilmomasiina-models";
+import type { SignupForEditResponse, SignupUpdateResponse } from "@tietokilta/ilmomasiina-models";
 import { EDIT_TOKEN_HEADER } from "@tietokilta/ilmomasiina-models";
 import { ApiError, apiFetch } from "../../api";
 import { useAbortablePromise } from "../../utils/abortable";
@@ -11,38 +11,70 @@ import { Provider, State } from "./state";
 export interface EditSignupProps {
   id: string;
   editToken: string;
+  paid?: boolean;
   language?: string;
 }
 
 export { useStateContext as useEditSignupContext, Provider as EditSignupContextProvider } from "./state";
 export type { State as EditSignupState } from "./state";
-export { useDeleteSignup, useUpdateSignup } from "./actions";
+export * from "./actions";
 
-export function useEditSignupState({ id, editToken, language }: EditSignupProps) {
-  const { result, error, pending } = useAbortablePromise(
+export function useEditSignupState({ id, editToken, paid, language }: EditSignupProps) {
+  const [updated, setUpdated] = React.useState<SignupUpdateResponse | null>(null);
+
+  const {
+    result: original,
+    error,
+    pending,
+  } = useAbortablePromise(
     async (signal) => {
-      const response = await apiFetch<SignupForEditResponse>(`signups/${id}`, {
-        signal,
-        headers: {
-          [EDIT_TOKEN_HEADER]: editToken,
-        },
-      });
+      setUpdated(null);
+      let response;
+      let paymentError: ApiError | undefined;
+      if (paid) {
+        // Attempt to complete payment. Fall back to normal fetch if it fails.
+        try {
+          response = await apiFetch<SignupForEditResponse>(`signups/${id}/payment/complete`, {
+            signal,
+            method: "POST",
+            headers: {
+              [EDIT_TOKEN_HEADER]: editToken,
+            },
+          });
+        } catch (err) {
+          paymentError = err as ApiError;
+        }
+      }
+      if (!response) {
+        response = await apiFetch<SignupForEditResponse>(`signups/${id}`, {
+          signal,
+          headers: {
+            [EDIT_TOKEN_HEADER]: editToken,
+          },
+        });
+      }
       const now = Date.now();
       return {
         ...response,
-        signup: {
-          ...response.signup,
-          firstName: response.signup.firstName || "",
-          lastName: response.signup.lastName || "",
-          email: response.signup.email || "",
-        },
+        paymentError,
         // Compute these once when the response arrives.
         editingClosedOnLoad: response.signup.editableForMillis === 0,
         confirmableUntil: now + response.signup.confirmableForMillis,
         editableUntil: now + response.signup.editableForMillis,
+
+        updateSignup: (update: SignupUpdateResponse) => {
+          // Only store the update if the hook hasn't unmounted.
+          if (!signal.aborted) setUpdated(update);
+        },
       };
     },
-    [id, editToken],
+    [id, editToken, paid],
+  );
+
+  // Merge any updates into the result.
+  const result = useMemo(
+    () => (original && updated ? { ...original, signup: { ...original.signup, ...updated } } : original),
+    [original, updated],
   );
 
   const localizedEvent = useMemo(
@@ -65,7 +97,7 @@ export function useEditSignupState({ id, editToken, language }: EditSignupProps)
   });
 }
 
-export function EditSignupProvider({ id, editToken, language, children }: PropsWithChildren<EditSignupProps>) {
-  const state = useEditSignupState({ id, editToken, language });
+export function EditSignupProvider({ id, editToken, paid, language, children }: PropsWithChildren<EditSignupProps>) {
+  const state = useEditSignupState({ id, editToken, paid, language });
   return <Provider value={state}>{children}</Provider>;
 }

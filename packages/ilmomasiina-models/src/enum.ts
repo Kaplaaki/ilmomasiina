@@ -97,6 +97,7 @@ export enum ErrorCode {
   PAYMENT_IN_PROGRESS = "PaymentInProgress",
   PAYMENT_NOT_FOUND = "PaymentNotFound",
   PAYMENT_NOT_COMPLETE = "PaymentNotComplete",
+  PAYMENT_RATE_LIMITED = "PaymentRateLimited",
 }
 
 export enum SignupFieldError {

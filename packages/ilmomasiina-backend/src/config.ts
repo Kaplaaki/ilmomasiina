@@ -120,6 +120,13 @@ const config = {
    * @example "http://example.com/signup/{id}/{editToken}"
    */
   editSignupUrl: envString("EDIT_SIGNUP_URL", `${envString("BASE_URL")}/signup/{id}/{editToken}`),
+  /** URL template for a signup payment completion page. Used for payments. Contains `{id}` and `{editToken}`, may contain `{lang}`.
+   *
+   * This is intended for custom frontends; the default is for the frontend included in the repo.
+   *
+   * @example "http://example.com/payment/{id}/{editToken}"
+   */
+  completePaymentUrl: envString("COMPLETE_PAYMENT_URL", `${envString("BASE_URL")}/payment/{id}/{editToken}`),
   /** URL template for the admin main page. Used for emails. May contain `{lang}`.
    *
    * This is intended for custom frontends; the default is for the frontend included in the repo.
@@ -244,6 +251,13 @@ export function eventDetailsUrl({ slug, lang }: { slug: string; lang: string }) 
 
 export function editSignupUrl({ id, editToken, lang }: { id: string; editToken: string; lang: string }) {
   return config.editSignupUrl
+    .replace(/\{id\}/g, id)
+    .replace(/\{editToken\}/g, editToken)
+    .replace(/\{lang\}/g, lang);
+}
+
+export function completePaymentUrl({ id, editToken, lang }: { id: string; editToken: string; lang: string }) {
+  return config.completePaymentUrl
     .replace(/\{id\}/g, id)
     .replace(/\{editToken\}/g, editToken)
     .replace(/\{lang\}/g, lang);

@@ -4,11 +4,11 @@ import { DatabaseError } from "sequelize";
 import Stripe from "stripe";
 
 import { PaymentStatus } from "@tietokilta/ilmomasiina-models";
-import config, { editSignupUrl } from "../../config";
+import config, { completePaymentUrl } from "../../config";
 import { Payment } from "../../models/payment";
 import { Signup } from "../../models/signup";
 import { generateToken } from "../signups/editTokens";
-import { OnlinePaymentsDisabled } from "./errors";
+import { OnlinePaymentsDisabled, PaymentRateLimited } from "./errors";
 
 /** Pre-initialized Stripe client, or null if not configured. */
 const stripeClient: Stripe | null = config.stripeSecretKey
@@ -33,7 +33,7 @@ export async function createCheckoutSession(signup: Signup, payment: Payment): P
   // TODO: This should come from the Payment to allow idempotent retries.
   const language = signup.language ?? config.defaultLanguage;
   const editToken = generateToken(signup.id);
-  const returnUrl = editSignupUrl({ id: signup.id, editToken, lang: language });
+  const returnUrl = completePaymentUrl({ id: signup.id, editToken, lang: language });
 
   const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = payment.products.map((product) => ({
     price_data: {
@@ -46,21 +46,28 @@ export async function createCheckoutSession(signup: Signup, payment: Payment): P
     quantity: product.amount,
   }));
 
-  return stripe.checkout.sessions.create({
-    mode: "payment",
-    ui_mode: "hosted",
-    line_items: lineItems,
-    allow_promotion_codes: true,
-    // TODO: This should come from the Payment to allow idempotent retries.
-    customer_email: signup.email ?? undefined,
-    success_url: returnUrl,
-    cancel_url: returnUrl,
-    expires_at: moment(payment.expiresAt).unix(),
-    metadata: {
-      signupId: payment.signupId,
-      paymentId: String(payment.id),
-    },
-  });
+  try {
+    return await stripe.checkout.sessions.create({
+      mode: "payment",
+      ui_mode: "hosted",
+      line_items: lineItems,
+      allow_promotion_codes: true,
+      // TODO: This should come from the Payment to allow idempotent retries.
+      customer_email: signup.email ?? undefined,
+      success_url: returnUrl,
+      cancel_url: returnUrl,
+      expires_at: moment(payment.expiresAt).unix(),
+      metadata: {
+        signupId: payment.signupId,
+        paymentId: String(payment.id),
+      },
+    });
+  } catch (err) {
+    if (err instanceof Stripe.errors.StripeRateLimitError) {
+      throw new PaymentRateLimited("Rate limit exceeded");
+    }
+    throw err;
+  }
 }
 
 /** Updates the Payment for a given Stripe Checkout Session ID and status and performs side effects. */
@@ -112,7 +119,15 @@ export async function checkoutSessionStatusUpdated(
  */
 export async function refreshCheckoutSession(payment: Payment): Promise<Stripe.Checkout.Session> {
   const stripe = getStripe();
-  const session = await stripe.checkout.sessions.retrieve(payment.stripeCheckoutSessionId!);
+  let session: Stripe.Checkout.Session;
+  try {
+    session = await stripe.checkout.sessions.retrieve(payment.stripeCheckoutSessionId!);
+  } catch (err) {
+    if (err instanceof Stripe.errors.StripeRateLimitError) {
+      throw new PaymentRateLimited("Rate limit exceeded");
+    }
+    throw err;
+  }
   await checkoutSessionStatusUpdated(session.id, session.status);
   return session;
 }
@@ -134,7 +149,10 @@ export async function expirePaymentForSignupUpdate(payment: Payment): Promise<vo
       try {
         await stripe.checkout.sessions.expire(payment.stripeCheckoutSessionId!);
       } catch (err) {
-        if (err instanceof Stripe.errors.StripeInvalidRequestError) {
+        if (
+          err instanceof Stripe.errors.StripeInvalidRequestError ||
+          err instanceof Stripe.errors.StripeRateLimitError
+        ) {
           // The sessions is likely already complete or expired, just not up to date in our DB.
           // Ignore it now and fail later when we check for conflicting payments.
           console.error("Failed to expire checkout session for updating signup:", err);

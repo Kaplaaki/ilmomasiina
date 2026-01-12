@@ -66,7 +66,7 @@ export default function setupPaymentModel(sequelize: Sequelize) {
         },
       },
       currency: {
-        type: DataTypes.CHAR(8),
+        type: DataTypes.STRING(8),
         allowNull: false,
       },
       products: {
