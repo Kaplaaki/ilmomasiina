@@ -213,6 +213,7 @@ export async function eventDetailsForAdmin(eventID: EventID): Promise<AdminEvent
           {
             model: Payment.scope("active"),
             attributes: ["status"],
+            as: "activePayment",
             required: false,
           },
         ],

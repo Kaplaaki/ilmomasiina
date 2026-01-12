@@ -159,6 +159,13 @@ const config = {
 
   /** The currency used for payments. */
   currency: envString("CURRENCY", "EUR"),
+
+  /** Stripe secret key for payment processing. */
+  stripeSecretKey: envString("STRIPE_SECRET_KEY", null),
+  /** Stripe webhook signing secret for verifying webhook events. */
+  stripeWebhookSecret: envString("STRIPE_WEBHOOK_SECRET", null),
+  /** How long (in minutes) before a Stripe Checkout Session expires. Default: 30 minutes. */
+  stripeCheckoutExpiryMins: envInteger("STRIPE_CHECKOUT_EXPIRY_MINS", 30),
 } as const;
 
 if (!process.env.PORT && config.nodeEnv === "production") {
@@ -195,11 +202,7 @@ if (config.oldEditTokenSalt === config.newEditTokenSecret) {
   );
 }
 
-try {
-  // Node only supports URL.canParse since 18.17.0
-  // eslint-disable-next-line no-new
-  new URL(config.baseUrl);
-} catch (err) {
+if (!URL.canParse(config.baseUrl)) {
   throw new Error("BASE_URL is invalid - make sure it is a full URL like http://example.com.");
 }
 
@@ -209,6 +212,14 @@ if (!config.eventDetailsUrl.includes("{slug}")) {
 
 if (!config.editSignupUrl.includes("{id}") || !config.editSignupUrl.includes("{editToken}")) {
   throw new Error("EDIT_SIGNUP_URL must contain {id} and {editToken} if set.");
+}
+
+if (config.stripeCheckoutExpiryMins < 30 || config.stripeCheckoutExpiryMins > 1440) {
+  throw new Error("STRIPE_CHECKOUT_EXPIRY_MINS must be between 30 and 1440 (24 hours).");
+}
+
+if (config.stripeSecretKey && !config.stripeWebhookSecret) {
+  console.warn("STRIPE_WEBHOOK_SECRET is not configured - ignoring webhooks.");
 }
 
 i18n.init({

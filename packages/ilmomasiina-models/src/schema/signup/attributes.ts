@@ -49,7 +49,7 @@ export const publicEditableSignupAttributes = Type.Object({
     description: "First name of the attendee. Null if not set yet or not public.",
   }),
   lastName: Nullable(Type.String({ maxLength: 255 }), {
-    description: "Fast name of the attendee. Null if not set yet or not public.",
+    description: "Last name of the attendee. Null if not set yet or not public.",
   }),
   namePublic,
   answers: Type.Array(signupAnswer, {

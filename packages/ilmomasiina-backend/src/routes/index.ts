@@ -20,6 +20,9 @@ import { adminLogin, renewAdminToken, requireAdmin } from "./authentication/admi
 import { getEventDetailsForAdmin, getEventDetailsForUser } from "./events/getEventDetails";
 import { getEventsListForAdmin, getEventsListForUser } from "./events/getEventsList";
 import { sendICalFeed } from "./ical";
+import completePayment from "./payment/completePayment";
+import startPayment from "./payment/startPayment";
+import stripeWebhook from "./payment/webhook";
 import createSignup from "./signups/createNewSignup";
 import { deleteSignupAsAdmin, deleteSignupAsUser } from "./signups/deleteSignup";
 import { requireValidEditToken } from "./signups/editTokens";
@@ -355,15 +358,14 @@ async function setupPublicRoutes(fastifyInstance: FastifyInstance) {
       // Require valid edit token:
       preHandler: requireValidEditToken,
     },
-    /* TODO */ () => {},
+    startPayment,
   );
 
-  server.post<{ Params: schema.SignupPathParams; Body: schema.CompletePaymentBody }>(
+  server.post<{ Params: schema.SignupPathParams }>(
     "/signups/:id/payment/complete",
     {
       schema: {
         params: schema.signupPathParams,
-        body: schema.completePaymentBody,
         response: {
           ...errorResponses,
           200: schema.signupForEditResponse,
@@ -372,12 +374,30 @@ async function setupPublicRoutes(fastifyInstance: FastifyInstance) {
       // Require valid edit token:
       preHandler: requireValidEditToken,
     },
-    /* TODO */ () => {},
+    completePayment,
   );
 
   // Stripe webhook
-
-  server.post("/stripe/webhook", {}, /* TODO */ () => {});
+  server.post(
+    "/stripe/webhook",
+    {
+      // Custom body parser to preserve raw body for Stripe signature verification
+      bodyLimit: 1048576, // 1MB limit
+      preParsing: async (request, _reply, payload) => {
+        const chunks: Buffer[] = [];
+        for await (const chunk of payload) {
+          chunks.push(chunk as Buffer);
+        }
+        const rawBody = Buffer.concat(chunks);
+        // Store raw body for signature verification
+        (request as unknown as { rawBody: Buffer }).rawBody = rawBody;
+        // Return a new readable stream with the same data
+        const { Readable } = await import("stream");
+        return Readable.from(rawBody);
+      },
+    },
+    stripeWebhook,
+  );
 
   // Admin session management routes
 

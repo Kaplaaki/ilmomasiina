@@ -90,6 +90,13 @@ export enum ErrorCode {
   SIGNUP_VALIDATION_ERROR = "SignupValidationError",
   EVENT_VALIDATION_ERROR = "EventValidationError",
   VALIDATION_ERROR = "FST_ERR_VALIDATION",
+  ONLINE_PAYMENTS_DISABLED = "OnlinePaymentsDisabled",
+  SIGNUP_NOT_CONFIRMED = "SignupNotConfirmed",
+  SIGNUP_ALREADY_PAID = "SignupAlreadyPaid",
+  PAYMENT_NOT_REQUIRED = "PaymentNotRequired",
+  PAYMENT_CREATION_IN_PROGRESS = "PaymentCreationInProgress",
+  PAYMENT_NOT_FOUND = "PaymentNotFound",
+  PAYMENT_NOT_COMPLETE = "PaymentNotComplete",
 }
 
 export enum SignupFieldError {

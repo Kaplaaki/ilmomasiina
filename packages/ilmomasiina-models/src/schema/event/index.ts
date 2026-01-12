@@ -41,7 +41,13 @@ export const userEventForSignup = Type.Interface([eventIdentity, publicAttribute
 
 /** Non-relation attributes for the admin API. */
 const adminAttributes = Type.Interface(
-  [publicEventAttributes, publicCommonAttributes, adminOnlyEventAttributes, adminDetailsOnlyCommonAttributes, adminEventLanguages],
+  [
+    publicEventAttributes,
+    publicCommonAttributes,
+    adminOnlyEventAttributes,
+    adminDetailsOnlyCommonAttributes,
+    adminEventLanguages,
+  ],
   {},
 );
 

@@ -20,8 +20,7 @@ stateDiagram-v2
     [*] --> CREATING: User initiates payment
 
     CREATING --> PENDING: Stripe accepts session
-    CREATING --> CREATION_FAILED: Stripe rejects (non-network error)
-    CREATING --> CREATING: Network error (retry with idempotency key)
+    CREATING --> CREATION_FAILED: Stripe API call fails
 
     PENDING --> PAID: Webhook or return URL confirmation
     PENDING --> EXPIRED: Webhook or session check reveals expiry
@@ -66,14 +65,13 @@ The payment's `amount` and `products` provide an audit trail of what was actuall
 
 1. User initiates payment
 2. Backend creates a `Payment` record in `CREATING` state
-3. Backend calls Stripe API to create a Checkout Session (with idempotency key)
+3. Backend calls Stripe API to create a Checkout Session
 4. On success: transition to `PENDING`, store Checkout Session ID
-5. On definite failure (Stripe rejects): transition to `CREATION_FAILED`
-6. On network error: leave in `CREATING` (will be retried)
+5. On any failure: transition to `CREATION_FAILED` (user can retry)
 
 ### Payment Completion
 
-Payments transition from `PENDING` to terminal states via:
+Payments transition from `PENDING` to `PAID` or `EXPIRED` via:
 
 - **Webhook**: Stripe sends `checkout.session.completed` or `checkout.session.expired`
 - **Return URL**: User returns from Stripe, backend verifies session status
@@ -86,12 +84,14 @@ When a user attempts to pay and a payment record already exists:
 
 | Current State | Action |
 |---------------|--------|
+| `CREATING` | Fail request (TODO: retry with idempotency key if new enough) |
 | `PAID` | No action needed; update UI to reflect paid status |
-| `PENDING` | Check session status in Stripe. If valid, redirect. If expired, create new payment. |
+| `PENDING` | Check session status in Stripe. If pending, redirect. Otherwise, update payment and act accordingly. |
 | `EXPIRED` | Create a new payment |
 | `CREATION_FAILED` | Create a new payment |
-| `CREATING` | Reattempt Stripe API call with same idempotency key, then transition accordingly |
 | `REFUNDED` | Create a new payment |
+
+Note: `CREATING` is a transient state that only exists during API calls. Users should not encounter it.
 
 ### Refunds
 
@@ -133,14 +133,6 @@ The following constraints are enforced at the database level:
 
 - **No deletions**: A trigger prevents all DELETE operations on the payment table.
 
-## Idempotency
-
-The Stripe API idempotency key format is `ilmomasiina_${signup.id}_${payment.id}`.
-
-- Each payment record produces a unique key
-- Retrying a CREATING payment reuses the same key (safe retry semantics)
-- New payment records (after EXPIRED/CREATION_FAILED/REFUNDED) get fresh keys
-
 ## Background Jobs
 
 ### Stale PENDING Polling
@@ -159,7 +151,7 @@ The Stripe API idempotency key format is `ilmomasiina_${signup.id}_${payment.id}
 
 ### Stuck in CREATING State
 
-If the server crashes after creating the payment record but before completing the Stripe call, the payment remains in `CREATING`. When the user returns, we reattempt with the idempotency key. If they never return, a new payment attempt will find and handle the existing CREATING record.
+If the server crashes after creating the payment record but before completing the Stripe call, the payment remains in `CREATING`. This is an edge case that should be rare in practice. A background job can periodically mark stale `CREATING` payments (e.g., older than 5 minutes) as `CREATION_FAILED` to allow users to retry.
 
 ### Webhook Delivery Failures
 
@@ -176,14 +168,9 @@ Stripe may send the same webhook multiple times. The `UPDATE ... WHERE status = 
 
 If the user is on Stripe's payment page when the session expires, Stripe handles this gracefully. On return, we check status and create a new session if needed.
 
-### Network Error vs. Rejection
+### Stripe API Errors
 
-The Stripe Node.js SDK throws typed exceptions:
-- `StripeInvalidRequestError` → definite rejection → `CREATION_FAILED`
-- `StripeAPIError` → Stripe-side issue, unknown state → stay `CREATING`
-- `StripeConnectionError` → network failure, unknown state → stay `CREATING`
-
-When uncertain, stay `CREATING` and rely on idempotency retry.
+All Stripe API errors (network failures, validation errors, server errors) result in the payment being marked as `CREATION_FAILED`. The user can simply retry, which creates a new payment record. This simplifies error handling and avoids leaving payments in an ambiguous state.
 
 ### Signup Deletion with Active Payment
 

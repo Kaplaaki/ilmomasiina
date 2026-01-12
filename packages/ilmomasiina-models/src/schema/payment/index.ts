@@ -8,14 +8,5 @@ export const startPaymentResponse = Type.Object({
   }),
 });
 
-/** Request body for completing a payment. */
-export const completePaymentBody = Type.Object({
-  paymentId: Type.String({
-    description: "The ID of the payment being completed.",
-  }),
-});
-
 /** Response schema for starting a payment. */
 export type StartPaymentResponse = Static<typeof startPaymentResponse>;
-/** Request body for completing a payment. */
-export type CompletePaymentBody = Static<typeof completePaymentBody>;

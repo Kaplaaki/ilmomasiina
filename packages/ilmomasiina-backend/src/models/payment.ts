@@ -11,26 +11,19 @@ export interface PaymentAttributes {
   amount: number;
   currency: string;
   products: ProductSchema[];
-  createdAt: Date;
-  updatedAt: Date;
   expiresAt: Date;
   completedAt: Date | null;
 }
 
-// TODO: This is a bit unconsistent with other models, since others don't define createdAt at all in
-//  the FooAttributes interface. It still shouldn't be passed to Model<> since we want the Sequelize
-//  defaults for it.
-interface PaymentManualAttributes extends Omit<PaymentAttributes, "createdAt" | "updatedAt"> {}
-
 export interface PaymentCreateAttributes extends Optional<
-  PaymentManualAttributes,
+  PaymentAttributes,
   "id" | "stripeCheckoutSessionId" | "status" | "completedAt"
 > {}
 
-export class Payment extends Model<PaymentManualAttributes, PaymentCreateAttributes> implements PaymentAttributes {
+export class Payment extends Model<PaymentAttributes, PaymentCreateAttributes> implements PaymentAttributes {
   public id!: number;
   public signupId!: string;
-  public stripeCheckoutSessionId!: string;
+  public stripeCheckoutSessionId!: string | null;
   public status!: PaymentStatus;
   public amount!: number;
   public currency!: string;
@@ -38,7 +31,7 @@ export class Payment extends Model<PaymentManualAttributes, PaymentCreateAttribu
 
   public readonly createdAt!: Date;
   public readonly updatedAt!: Date;
-  public readonly expiresAt!: Date;
+  public expiresAt!: Date;
   public completedAt!: Date | null;
 }
 
