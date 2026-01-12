@@ -1,10 +1,18 @@
 import { FastifyReply, FastifyRequest } from "fastify";
 import moment from "moment";
-import { UniqueConstraintError } from "sequelize";
+import { DatabaseError as PgDatabaseError } from "pg";
+import { DatabaseError, Transaction, UniqueConstraintError } from "sequelize";
 import Stripe from "stripe";
 
-import { PaymentMode, PaymentStatus, SignupPathParams, StartPaymentResponse } from "@tietokilta/ilmomasiina-models";
+import {
+  PaymentMode,
+  PaymentStatus,
+  SignupID,
+  SignupPathParams,
+  StartPaymentResponse,
+} from "@tietokilta/ilmomasiina-models";
 import config from "../../config";
+import { getSequelize } from "../../models";
 import { Event } from "../../models/event";
 import { Payment } from "../../models/payment";
 import { Quota } from "../../models/quota";
@@ -12,7 +20,7 @@ import { Signup } from "../../models/signup";
 import { NoSuchSignup } from "../signups/errors";
 import {
   OnlinePaymentsDisabled,
-  PaymentCreationInProgress,
+  PaymentInProgress,
   PaymentNotRequired,
   SignupAlreadyPaid,
   SignupNotConfirmed,
@@ -20,30 +28,56 @@ import {
 import { createCheckoutSession, getStripe, refreshCheckoutSession } from "./index";
 
 /** Create a new payment and Stripe checkout session. */
-async function createPayment(signup: Signup): Promise<string> {
+async function createPayment(signupId: SignupID): Promise<string> {
   const expiresAt = moment().add(config.stripeCheckoutExpiryMins, "minutes");
   // Stripe requires at least 30 minutes expiry; add some buffer for making the request.
   if (config.stripeCheckoutExpiryMins === 30) expiresAt.add(30, "seconds");
 
-  // Create payment record in CREATING state.
+  // Create payment record in CREATING state with fresh signup data.
   let payment: Payment;
+  let signup: Signup;
   try {
-    payment = await Payment.create({
-      signupId: signup.id,
-      amount: signup.price!,
-      currency: signup.currency!,
-      products: signup.products!,
-      expiresAt: expiresAt.toDate(),
+    [payment, signup] = await getSequelize().transaction(async (transaction) => {
+      // Re-fetch signup with FOR UPDATE lock
+      // This waits if a signup update is in progress (holding the lock)
+      const freshSignup = await Signup.findByPk(signupId, {
+        transaction,
+        lock: Transaction.LOCK.UPDATE,
+      });
+      if (!freshSignup) {
+        throw new NoSuchSignup("Signup not found");
+      }
+
+      // Revalidate signup state
+      if (!freshSignup.confirmedAt) {
+        throw new SignupNotConfirmed("Signup must be confirmed before payment");
+      }
+      if (!freshSignup.hasPrice) {
+        throw new PaymentNotRequired("This signup does not require payment");
+      }
+
+      // Create Payment with fresh data
+      const newPayment = await Payment.create(
+        {
+          signupId,
+          amount: freshSignup.price!,
+          currency: freshSignup.currency!,
+          products: freshSignup.products!,
+          expiresAt: expiresAt.toDate(),
+        },
+        { transaction },
+      );
+      return [newPayment, freshSignup];
     });
   } catch (error) {
     // Unique constraint violation means another request already created a payment.
     if (error instanceof UniqueConstraintError) {
-      throw new PaymentCreationInProgress("Payment creation already in progress");
+      throw new PaymentInProgress("Payment creation already in progress");
     }
     throw error;
   }
 
-  // Create checkout session in Stripe.
+  // Create checkout session in Stripe (outside transaction - no locks held).
   let session: Stripe.Checkout.Session;
   try {
     session = await createCheckoutSession(signup, payment);
@@ -54,12 +88,19 @@ async function createPayment(signup: Signup): Promise<string> {
   }
 
   // Transition to PENDING.
-  // This can theoretically fail in the DB triggers if createCheckoutSession took long enough that the payment was
-  // marked CREATION_FAILED.
-  await Payment.update(
-    { status: PaymentStatus.PENDING, stripeCheckoutSessionId: session.id },
-    { where: { id: payment.id } },
-  );
+  try {
+    await Payment.update(
+      { status: PaymentStatus.PENDING, stripeCheckoutSessionId: session.id },
+      // This can fail if a concurrent signup update has marked it CREATION_FAILED.
+      // Intentionally don't filter on current status so we can get a trigger error instead of a silent ignore.
+      { where: { id: payment.id } },
+    );
+  } catch (error) {
+    if (error instanceof DatabaseError && (error.parent as PgDatabaseError).code === "P0001") {
+      throw new Error("Payment creation failed due to concurrent update");
+    }
+    throw error;
+  }
 
   return session.url!;
 }
@@ -69,7 +110,7 @@ async function createPayment(signup: Signup): Promise<string> {
  * Checks the Stripe session status and either returns the URL (pending) or marks the payment as paid/expired.
  * If expired, creates a new payment.
  */
-async function handlePendingPayment(signup: Signup, payment: Payment): Promise<string> {
+async function handlePendingPayment(signupId: SignupID, payment: Payment): Promise<string> {
   const session = await refreshCheckoutSession(payment);
 
   switch (session.status!) {
@@ -77,7 +118,7 @@ async function handlePendingPayment(signup: Signup, payment: Payment): Promise<s
       throw new SignupAlreadyPaid("This signup has already been paid");
     case "expired":
       // Try to create a new payment. Throws 409 in case requests race.
-      return createPayment(signup);
+      return createPayment(signupId);
     case "open":
       // Session still valid, return its URL
       return session.url!;
@@ -100,7 +141,6 @@ async function getOrCreatePayment(signupId: string): Promise<string> {
       },
       {
         model: Quota,
-        attributes: [],
         include: [
           {
             model: Event,
@@ -111,7 +151,7 @@ async function getOrCreatePayment(signupId: string): Promise<string> {
     ],
   });
   if (!signup) {
-    throw new NoSuchSignup("No signup found with given id");
+    throw new NoSuchSignup("Signup not found");
   }
 
   // Validate signup state
@@ -127,7 +167,7 @@ async function getOrCreatePayment(signupId: string): Promise<string> {
 
   if (!signup.activePayment) {
     // No active payment - create a new one. Throws 409 in case requests race.
-    return createPayment(signup);
+    return createPayment(signupId);
   }
 
   const payment = signup.activePayment;
@@ -136,12 +176,13 @@ async function getOrCreatePayment(signupId: string): Promise<string> {
       throw new SignupAlreadyPaid("This signup has already been paid");
 
     case PaymentStatus.PENDING:
-      return handlePendingPayment(signup, payment);
+      return handlePendingPayment(signupId, payment);
 
     case PaymentStatus.CREATING:
       // Another request is creating this payment - race condition.
-      // TODO: We could retry here with an idempotency key if the payment is new enough.
-      throw new PaymentCreationInProgress("Payment creation already in progress");
+      // TODO: We could retry here with an idempotency key if the payment is new enough, though
+      //  this should only occur in races (user error) and server crashes.
+      throw new PaymentInProgress("Payment creation already in progress");
 
     case PaymentStatus.CREATION_FAILED:
     case PaymentStatus.EXPIRED:

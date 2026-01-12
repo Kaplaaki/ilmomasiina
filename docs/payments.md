@@ -183,3 +183,45 @@ If a signup's total price is zero (e.g., free event or 100% discount), no paymen
 ### Concurrent Admin Actions
 
 If two admins try to refund the same payment simultaneously, the `UPDATE ... WHERE status = 'paid'` pattern ensures only one succeeds. The other sees zero affected rows and should report the payment was already refunded.
+
+### Signup Updates
+
+The payment system uses **pessimistic locking** to prevent race conditions between signup updates and payment creation.
+
+#### Problem
+
+With READ COMMITTED isolation, two race conditions can occur:
+
+1. **Payment using stale data:** User updates signup (price changes from $100 to $50) while payment is being created. Payment could capture $100 and create a Stripe session for the wrong amount.
+
+2. **Outdated payments after signup update:** User has a PENDING Stripe session for $100, then updates their signup to $50. The old Stripe session remains active and could charge the wrong amount.
+
+#### Solution: Pessimistic Locking
+
+**Approach:**
+- Signup row is locked with FOR UPDATE during updates
+- Payment creation waits for this lock when fetching signup data
+- Ensures fresh data is always used
+- Lock duration is kept short, no API calls within transactions
+
+**Direction 1 - Protect Payment Creation:**
+
+When creating a payment:
+1. Load signup for initial validation of preconditions
+2. **BEGIN TRANSACTION**
+3. Re-fetch signup with FOR UPDATE lock (waits if update in progress)
+4. Create Payment record with fresh price/currency/products
+5. **COMMIT TRANSACTION** (releases lock)
+6. Call Stripe API (no locks held, no transactions)
+7. Transition Payment to PENDING
+
+**Direction 2 - Protect Signup Updates:**
+
+When updating signup:
+1. Find and expire any existing CREATING or PENDING payments (in Stripe, then database)
+2. **BEGIN TRANSACTION**
+3. Fetch signup with FOR UPDATE lock
+4. Check for any CREATING/PENDING/PAID payments (defensive)
+5. If found, fail with error
+6. Update signup
+7. **COMMIT TRANSACTION** (releases lock)

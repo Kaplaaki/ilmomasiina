@@ -19,10 +19,9 @@ export class SignupAlreadyPaid extends CustomError {
     super(400, ErrorCode.SIGNUP_ALREADY_PAID, message);
   }
 }
-
-export class PaymentCreationInProgress extends CustomError {
+export class PaymentInProgress extends CustomError {
   constructor(message: string) {
-    super(409, ErrorCode.PAYMENT_CREATION_IN_PROGRESS, message);
+    super(409, ErrorCode.PAYMENT_IN_PROGRESS, message);
   }
 }
 

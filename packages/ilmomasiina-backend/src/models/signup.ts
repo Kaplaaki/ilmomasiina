@@ -110,7 +110,7 @@ export class Signup extends Model<SignupAttributes, SignupCreationAttributes> im
   public readonly createdAt!: Date;
   public readonly updatedAt!: Date;
 
-  public readonly activePayment?: Payment | null;
+  public activePayment?: Payment | null;
   public getActivePayment!: HasOneGetAssociationMixin<Payment>;
   public setActivePayment!: HasOneSetAssociationMixin<Payment, Payment["id"]>;
   public createActivePayment!: HasOneCreateAssociationMixin<Payment>;

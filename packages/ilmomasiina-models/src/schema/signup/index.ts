@@ -6,6 +6,7 @@ import {
   adminDynamicSignupAttributes,
   adminEditableSignupAttributes,
   editToken,
+  ownerDynamicSignupAttributes,
   ownerEditableSignupAttributes,
   publicDynamicSignupAttributes,
   publicEditableSignupAttributes,
@@ -50,7 +51,10 @@ export const adminSignupUpdateBody = Type.Partial(
 export const adminSignupCreateBody = Type.Interface([signupCreateBody, adminSignupUpdateBody], {});
 
 /** Response schema for successfully editing a signup. */
-export const signupUpdateResponse = signupIdentity;
+export const signupUpdateResponse = Type.Interface(
+  [signupIdentity, ownerEditableSignupAttributes, ownerDynamicSignupAttributes],
+  {},
+);
 
 /** Schema for signups in event details from the public API. */
 export const publicSignupSchema = Type.Interface([publicEditableSignupAttributes, publicDynamicSignupAttributes], {});

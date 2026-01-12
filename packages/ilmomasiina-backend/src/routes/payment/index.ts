@@ -1,4 +1,6 @@
 import moment from "moment";
+import { DatabaseError as PgDatabaseError } from "pg";
+import { DatabaseError } from "sequelize";
 import Stripe from "stripe";
 
 import { PaymentStatus } from "@tietokilta/ilmomasiina-models";
@@ -28,6 +30,7 @@ export function getStripe(): Stripe {
 export async function createCheckoutSession(signup: Signup, payment: Payment): Promise<Stripe.Checkout.Session> {
   const stripe = getStripe();
 
+  // TODO: This should come from the Payment to allow idempotent retries.
   const language = signup.language ?? config.defaultLanguage;
   const editToken = generateToken(signup.id);
   const returnUrl = editSignupUrl({ id: signup.id, editToken, lang: language });
@@ -47,12 +50,14 @@ export async function createCheckoutSession(signup: Signup, payment: Payment): P
     mode: "payment",
     ui_mode: "hosted",
     line_items: lineItems,
+    allow_promotion_codes: true,
+    // TODO: This should come from the Payment to allow idempotent retries.
     customer_email: signup.email ?? undefined,
     success_url: returnUrl,
     cancel_url: returnUrl,
     expires_at: moment(payment.expiresAt).unix(),
     metadata: {
-      signupId: signup.id,
+      signupId: payment.signupId,
       paymentId: String(payment.id),
     },
   });
@@ -110,4 +115,68 @@ export async function refreshCheckoutSession(payment: Payment): Promise<Stripe.C
   const session = await stripe.checkout.sessions.retrieve(payment.stripeCheckoutSessionId!);
   await checkoutSessionStatusUpdated(session.id, session.status);
   return session;
+}
+
+/**
+ * Attempts to expire an existing payment for a signup update.
+ *
+ * For PENDING payments, expires the Stripe Checkout Session first, then marks as EXPIRED in database.
+ * For CREATING payments, marks them as CREATION_FAILED (causing transition to PENDING to fail).
+ *
+ * Errors from concurrent state changes are ignored. This function is only best-effort; the actual
+ * check for conflicting payments is done in updateExistingSignup() once a lock is held.
+ */
+export async function expirePaymentForSignupUpdate(payment: Payment): Promise<void> {
+  const stripe = getStripe();
+  switch (payment.status) {
+    case PaymentStatus.PENDING:
+      // Expire PENDING payments in Stripe first, then mark as EXPIRED in DB.
+      try {
+        await stripe.checkout.sessions.expire(payment.stripeCheckoutSessionId!);
+      } catch (err) {
+        if (err instanceof Stripe.errors.StripeInvalidRequestError) {
+          // The sessions is likely already complete or expired, just not up to date in our DB.
+          // Ignore it now and fail later when we check for conflicting payments.
+          console.error("Failed to expire checkout session for updating signup:", err);
+          return;
+        }
+        throw err;
+      }
+      // We managed to expire the session, now mark the payment as EXPIRED.
+      // Nothing else should be changing it to PAID, so this should always succeed.
+      await Payment.update({ status: PaymentStatus.EXPIRED }, { where: { id: payment.id } });
+      break;
+
+    case PaymentStatus.CREATING:
+      // Mark CREATING payments as CREATION_FAILED
+      // This will cause the transition to PENDING to fail on the payment creation side.
+      try {
+        await Payment.update(
+          { status: PaymentStatus.CREATION_FAILED },
+          // This can fail if the payment creation wins the race.
+          // Intentionally don't filter on current status so we can get a trigger error instead of a silent ignore.
+          { where: { id: payment.id } },
+        );
+      } catch (error) {
+        if (error instanceof DatabaseError && (error.parent as PgDatabaseError).code === "P0001") {
+          // Also ignore now and fail later when we check for conflicting payments.
+          console.error("Failed to expire CREATING payment for updating signup:", error);
+          return;
+        }
+        throw error;
+      }
+      break;
+
+    case PaymentStatus.PAID:
+      // Nothing to do, fail later when checking for conflicting payments.
+      break;
+
+    case PaymentStatus.EXPIRED:
+    case PaymentStatus.CREATION_FAILED:
+    case PaymentStatus.REFUNDED:
+      // These should not be returned by the "active" scope, but handle defensively
+      throw new Error(`Invalid active payment status: ${payment.status}`);
+    default:
+      throw new Error(`Unknown payment status: ${payment.status satisfies never}`);
+  }
 }

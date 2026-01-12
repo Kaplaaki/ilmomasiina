@@ -94,7 +94,7 @@ export enum ErrorCode {
   SIGNUP_NOT_CONFIRMED = "SignupNotConfirmed",
   SIGNUP_ALREADY_PAID = "SignupAlreadyPaid",
   PAYMENT_NOT_REQUIRED = "PaymentNotRequired",
-  PAYMENT_CREATION_IN_PROGRESS = "PaymentCreationInProgress",
+  PAYMENT_IN_PROGRESS = "PaymentInProgress",
   PAYMENT_NOT_FOUND = "PaymentNotFound",
   PAYMENT_NOT_COMPLETE = "PaymentNotComplete",
 }

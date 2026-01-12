@@ -86,12 +86,34 @@ export default defineMigration({
       where: {
         [Op.or]: [
           {
-            status: [PaymentStatus.PENDING, PaymentStatus.PAID, PaymentStatus.EXPIRED, PaymentStatus.REFUNDED],
+            status: {
+              [Op.in]: [PaymentStatus.PENDING, PaymentStatus.PAID, PaymentStatus.EXPIRED, PaymentStatus.REFUNDED],
+            },
             stripeCheckoutSessionId: { [Op.ne]: null },
           },
           {
-            status: [PaymentStatus.CREATING, PaymentStatus.CREATION_FAILED],
+            status: {
+              [Op.notIn]: [PaymentStatus.PENDING, PaymentStatus.PAID, PaymentStatus.EXPIRED, PaymentStatus.REFUNDED],
+            },
             stripeCheckoutSessionId: { [Op.is]: null },
+          },
+        ],
+      },
+      transaction,
+    });
+    // Ensure completedAt is set if and only if status is PAID or REFUNDED.
+    await query.addConstraint("payment", {
+      type: "check",
+      fields: ["status", "completedAt"],
+      where: {
+        [Op.or]: [
+          {
+            status: { [Op.in]: [PaymentStatus.PAID, PaymentStatus.REFUNDED] },
+            completedAt: { [Op.ne]: null },
+          },
+          {
+            status: { [Op.notIn]: [PaymentStatus.PAID, PaymentStatus.REFUNDED] },
+            completedAt: { [Op.is]: null },
           },
         ],
       },
@@ -141,7 +163,6 @@ export default defineMigration({
           ${q`currency`},
           ${q`products`},
           ${q`expiresAt`},
-          ${q`completedAt`},
           ${q`createdAt`}
         ON ${q`payment`}
         FOR EACH ROW
@@ -171,6 +192,31 @@ export default defineMigration({
         ON ${q`payment`}
         FOR EACH ROW
         EXECUTE FUNCTION ${q`payment_session_id_set_once_fn`}();
+      `,
+      { transaction },
+    );
+    // Create a trigger to allow completedAt to be set once (NULL -> value).
+    await sequelize.query(
+      `
+      CREATE OR REPLACE FUNCTION ${q`payment_completed_at_set_once_fn`}()
+        RETURNS TRIGGER AS $$
+          BEGIN
+            IF OLD.${q`completedAt`} IS NULL AND NEW.${q`completedAt`} IS NOT NULL THEN
+              RETURN NEW;
+            END IF;
+            RAISE EXCEPTION 'completedAt can only be set once.';
+          END;
+        $$ LANGUAGE plpgsql;
+      `,
+      { transaction },
+    );
+    await sequelize.query(
+      `
+      CREATE TRIGGER ${q`payment_completed_at_set_once`}
+        BEFORE UPDATE OF ${q`completedAt`}
+        ON ${q`payment`}
+        FOR EACH ROW
+        EXECUTE FUNCTION ${q`payment_completed_at_set_once_fn`}();
       `,
       { transaction },
     );
@@ -236,6 +282,10 @@ export default defineMigration({
     await query.removeColumn("signup", "manualPaymentStatus", { transaction });
     await sequelize.query(`DROP TRIGGER IF EXISTS ${q`payment_validate_update`} ON ${q`payment`};`, { transaction });
     await sequelize.query(`DROP FUNCTION IF EXISTS ${q`payment_validate_update_fn`}();`, { transaction });
+    await sequelize.query(`DROP TRIGGER IF EXISTS ${q`payment_completed_at_set_once`} ON ${q`payment`};`, {
+      transaction,
+    });
+    await sequelize.query(`DROP FUNCTION IF EXISTS ${q`payment_completed_at_set_once_fn`}();`, { transaction });
     await sequelize.query(`DROP TRIGGER IF EXISTS ${q`payment_session_id_set_once`} ON ${q`payment`};`, {
       transaction,
     });

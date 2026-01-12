@@ -14,16 +14,20 @@ import type {
   SignupUpdateResponse,
   SignupValidationErrors,
 } from "@tietokilta/ilmomasiina-models";
-import { AuditEvent, QuestionType, SignupFieldError } from "@tietokilta/ilmomasiina-models";
+import { AuditEvent, PaymentStatus, QuestionType, SignupFieldError } from "@tietokilta/ilmomasiina-models";
 import config from "../../config";
 import sendSignupConfirmationMail from "../../mail/signupConfirmation";
 import { getSequelize } from "../../models";
 import { Answer, AnswerCreationAttributes } from "../../models/answer";
 import { Event } from "../../models/event";
+import { Payment } from "../../models/payment";
 import { Question } from "../../models/question";
 import { Quota } from "../../models/quota";
 import { Signup } from "../../models/signup";
 import { formatSignupForAdmin } from "../events/getEventDetails";
+import { expirePaymentForSignupUpdate } from "../payment";
+import { PaymentInProgress, SignupAlreadyPaid } from "../payment/errors";
+import type { StringifyApi } from "../utils";
 import { refreshSignupPositions } from "./computeSignupPosition";
 import { signupEditable } from "./createNewSignup";
 import { NoSuchQuota, NoSuchSignup, SignupsClosed, SignupValidationError } from "./errors";
@@ -40,6 +44,53 @@ export function getQuotaProducts(quota: Quota): ProductSchema[] {
     ];
   }
   return [];
+}
+
+/** Validates and gathers basic fields of a signup that can be edited in its current state. */
+function validateBasicFields(signup: Signup, event: Event, body: SignupUpdateBody) {
+  const fields: Partial<Signup> = {};
+  const errors: SignupValidationErrors = {};
+
+  const notConfirmedYet = !signup.confirmedAt;
+
+  // Check that required common fields are present (if first time confirming)
+  if (notConfirmedYet && event.nameQuestion) {
+    const { firstName, lastName } = body;
+    if (!firstName) {
+      errors.firstName = SignupFieldError.MISSING;
+    } else if (firstName.length > Signup.MAX_NAME_LENGTH) {
+      errors.firstName = SignupFieldError.TOO_LONG;
+    }
+    if (!lastName) {
+      errors.lastName = SignupFieldError.MISSING;
+    } else if (lastName.length > Signup.MAX_NAME_LENGTH) {
+      errors.lastName = SignupFieldError.TOO_LONG;
+    }
+    fields.firstName = firstName;
+    fields.lastName = lastName;
+  }
+
+  if (notConfirmedYet && event.emailQuestion) {
+    const { email } = body;
+    if (!email) {
+      errors.email = SignupFieldError.MISSING;
+    } else if (email.length > Signup.MAX_EMAIL_LENGTH) {
+      errors.email = SignupFieldError.TOO_LONG;
+    } else if (!isEmail(email)) {
+      errors.email = SignupFieldError.INVALID_EMAIL;
+    }
+    fields.email = email;
+  }
+
+  // Update signup language and name publicity if provided
+  if (body.namePublic != null) {
+    fields.namePublic = body.namePublic;
+  }
+  if (body.language) {
+    fields.language = body.language;
+  }
+
+  return { fields, errors };
 }
 
 /**
@@ -201,6 +252,34 @@ export function computePrice(products: ProductSchema[]): Partial<Signup> {
   };
 }
 
+/**
+ * Attempts to expire any existing payments for a signup.
+ *
+ * For PENDING payments, expires the Stripe Checkout Session first, then marks as EXPIRED in database.
+ * For CREATING payments, marks them as CREATION_FAILED (causing transition to PENDING to fail).
+ *
+ * Errors from concurrent state changes are ignored. This function is only best-effort; the actual
+ * check for conflicting payments is done in updateExistingSignup() once a lock is held.
+ */
+async function expireExistingPayments(signupId: string): Promise<void> {
+  // Find any active payments
+  const activePayments = await Payment.scope("active").findAll({
+    where: { signupId },
+  });
+
+  // There should only ever be one active payment, but handle all just in case.
+  await Promise.all(
+    activePayments.map(async (payment) => {
+      await expirePaymentForSignupUpdate(payment);
+
+      if (payment.status === PaymentStatus.PAID) {
+        // This would definitely fail later.
+        throw new SignupAlreadyPaid("This signup has already been paid");
+      }
+    }),
+  );
+}
+
 /** Internal function to fetch all data required for updating a signup. */
 async function getSignupAndEventForUpdate(id: SignupID, transaction: Transaction) {
   // Retrieve event data and lock the row for editing
@@ -238,6 +317,18 @@ async function updateExistingSignup(
   answerProducts: ProductSchema[],
   transaction: Transaction,
 ) {
+  // Before actually updating, ensure no active payments exist.
+  const conflictingPayment = await signup.getActivePayment({ transaction });
+  // Since we hold the lock on the signup and startPayment() also attempts to do so,
+  // we know there are no uncommitted payments about to be created that this couldn't see.
+
+  if (conflictingPayment?.status === PaymentStatus.PAID) {
+    throw new SignupAlreadyPaid("This signup has already been paid");
+  }
+  if (conflictingPayment) {
+    throw new PaymentInProgress("Active payment exists for this signup");
+  }
+
   // Get possible product line for the quota
   const quotaProducts = getQuotaProducts(signup.quota!);
   const products = [...quotaProducts, ...answerProducts];
@@ -276,7 +367,10 @@ export async function updateSignupAsUser(
   request: FastifyRequest<{ Params: SignupPathParams; Body: SignupUpdateBody }>,
   reply: FastifyReply,
 ): Promise<SignupUpdateResponse> {
-  const { updatedSignup, edited } = await getSequelize().transaction(async (transaction) => {
+  // First, attempt to expire any existing payments for this signup.
+  await expireExistingPayments(request.params.id);
+
+  const { updatedSignup, updatedAnswers, edited } = await getSequelize().transaction(async (transaction) => {
     const { signup, event } = await getSignupAndEventForUpdate(request.params.id, transaction);
 
     if (!signupEditable(event, signup)) {
@@ -287,45 +381,7 @@ export async function updateSignupAsUser(
     const notConfirmedYet = !signup.confirmedAt;
 
     // Collect fields to update on signup itself (name and email only editable on first confirmation)
-    const fields: Partial<Signup> = {};
-    const errors: SignupValidationErrors = {};
-
-    // Check that required common fields are present (if first time confirming)
-    if (notConfirmedYet && event.nameQuestion) {
-      const { firstName, lastName } = request.body;
-      if (!firstName) {
-        errors.firstName = SignupFieldError.MISSING;
-      } else if (firstName.length > Signup.MAX_NAME_LENGTH) {
-        errors.firstName = SignupFieldError.TOO_LONG;
-      }
-      if (!lastName) {
-        errors.lastName = SignupFieldError.MISSING;
-      } else if (lastName.length > Signup.MAX_NAME_LENGTH) {
-        errors.lastName = SignupFieldError.TOO_LONG;
-      }
-      fields.firstName = firstName;
-      fields.lastName = lastName;
-    }
-
-    if (notConfirmedYet && event.emailQuestion) {
-      const { email } = request.body;
-      if (!email) {
-        errors.email = SignupFieldError.MISSING;
-      } else if (email.length > Signup.MAX_EMAIL_LENGTH) {
-        errors.email = SignupFieldError.TOO_LONG;
-      } else if (!isEmail(email)) {
-        errors.email = SignupFieldError.INVALID_EMAIL;
-      }
-      fields.email = email;
-    }
-
-    // Update signup language and name publicity if provided
-    if (request.body.namePublic != null) {
-      fields.namePublic = request.body.namePublic;
-    }
-    if (request.body.language) {
-      fields.language = request.body.language;
-    }
+    const { fields, errors } = validateBasicFields(signup, event, request.body);
 
     // Validate answers and compute products from them
     const { newAnswers, answerProducts, answerErrors } = validateAnswersAndGetProducts(
@@ -341,17 +397,29 @@ export async function updateSignupAsUser(
 
     await updateExistingSignup(signup, fields, newAnswers, answerProducts, transaction);
     await request.logEvent(AuditEvent.EDIT_SIGNUP, { signup, event, transaction });
-    return { updatedSignup: signup, edited: !notConfirmedYet };
+    return {
+      updatedSignup: signup,
+      updatedAnswers: newAnswers,
+      edited: !notConfirmedYet,
+    };
   });
 
   // Send the confirmation email.
   // Intentionally not awaited, as we don't want to delay the response for an API call.
   sendSignupConfirmationMail(updatedSignup, edited ? "edit" : "signup", false);
 
-  reply.status(200);
-  return {
-    id: updatedSignup.id,
+  // Fetch updated payment data for response.
+  updatedSignup.activePayment = await updatedSignup.getActivePayment();
+
+  const response = {
+    ...updatedSignup.get({ plain: true }),
+    confirmed: Boolean(updatedSignup.confirmedAt),
+    answers: updatedAnswers,
+    paymentStatus: updatedSignup.effectivePaymentStatus,
   };
+
+  reply.status(200);
+  return response as unknown as StringifyApi<typeof response>;
 }
 
 /** Internal function that just converts the request body and then calls updateExistingSignup */
@@ -381,6 +449,9 @@ export async function updateSignupAsAdmin(
   request: FastifyRequest<{ Params: SignupPathParams; Body: AdminSignupUpdateBody }>,
   reply: FastifyReply,
 ): Promise<AdminSignupSchema> {
+  // First, attempt to expire any existing payments for this signup.
+  await expireExistingPayments(request.params.id);
+
   const updatedSignup = await getSequelize().transaction(async (transaction) => {
     const { signup, event } = await getSignupAndEventForUpdate(request.params.id, transaction);
     await updateExistingSignupAsAdmin(signup, event, request.body, transaction);
