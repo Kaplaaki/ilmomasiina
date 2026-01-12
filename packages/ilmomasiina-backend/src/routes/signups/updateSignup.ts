@@ -302,6 +302,7 @@ async function getSignupAndEventForUpdate(id: SignupID, transaction: Transaction
         ],
       },
     ],
+    order: [[Event, Question, "order", "ASC"]],
     transaction,
   });
   const event = signup.quota.event!;
@@ -485,6 +486,7 @@ export async function createSignupAsAdmin(
           ],
         },
       ],
+      order: [[Event, Question, "order", "ASC"]],
       transaction,
     });
     if (!quota || !quota.event) throw new NoSuchQuota("Quota doesn't exist.");
