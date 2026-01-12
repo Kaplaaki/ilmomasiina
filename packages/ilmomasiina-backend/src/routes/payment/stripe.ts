@@ -1,6 +1,6 @@
 import moment from "moment";
 import { DatabaseError as PgDatabaseError } from "pg";
-import { DatabaseError } from "sequelize";
+import { DatabaseError, Transaction } from "sequelize";
 import Stripe from "stripe";
 
 import { PaymentStatus } from "@tietokilta/ilmomasiina-models";
@@ -8,7 +8,7 @@ import config, { completePaymentUrl } from "../../config";
 import { Payment } from "../../models/payment";
 import { Signup } from "../../models/signup";
 import { generateToken } from "../signups/editTokens";
-import { OnlinePaymentsDisabled, PaymentRateLimited } from "./errors";
+import { OnlinePaymentsDisabled, PaymentInProgress, PaymentRateLimited, SignupAlreadyPaid } from "./errors";
 
 /** Pre-initialized Stripe client, or null if not configured. */
 const stripeClient: Stripe | null = config.stripeSecretKey
@@ -196,5 +196,52 @@ export async function expirePaymentForSignupUpdate(payment: Payment): Promise<vo
       throw new Error(`Invalid active payment status: ${payment.status}`);
     default:
       throw new Error(`Unknown payment status: ${payment.status satisfies never}`);
+  }
+}
+
+/**
+ * Attempts to expire any existing payments for a signup.
+ *
+ * For PENDING payments, expires the Stripe Checkout Session first, then marks as EXPIRED in database.
+ * For CREATING payments, marks them as CREATION_FAILED (causing transition to PENDING to fail).
+ *
+ * Errors from concurrent state changes are ignored. This function is only best-effort; the actual
+ * check for conflicting payments is done in updateExistingSignup() once a lock is held.
+ */
+export async function expireExistingPaymentsForSignupUpdate(signupId: string): Promise<void> {
+  // Find any active payments
+  const activePayments = await Payment.scope("active").findAll({
+    where: { signupId },
+  });
+
+  // There should only ever be one active payment, but handle all just in case.
+  await Promise.all(
+    activePayments.map(async (payment) => {
+      await expirePaymentForSignupUpdate(payment);
+
+      if (payment.status === PaymentStatus.PAID) {
+        // This would definitely fail later.
+        // TODO: Allow cancelling after payment with manual refunds.
+        throw new SignupAlreadyPaid("This signup has already been paid");
+      }
+    }),
+  );
+}
+
+/** Checks for any active payments on a signup. Expects to be called with a lock held on the signup. */
+export async function checkForConflictingPaymentsForSignupUpdate(
+  signup: Signup,
+  transaction: Transaction,
+): Promise<void> {
+  const conflictingPayment = await signup.getActivePayment({ transaction });
+  // Since we hold the lock on the signup and startPayment() also attempts to do so,
+  // we know there are no uncommitted payments about to be created that this couldn't see.
+
+  if (conflictingPayment?.status === PaymentStatus.PAID) {
+    // TODO: Allow cancelling after payment with manual refunds.
+    throw new SignupAlreadyPaid("This signup has already been paid");
+  }
+  if (conflictingPayment) {
+    throw new PaymentInProgress("Active payment exists for this signup");
   }
 }

@@ -5,33 +5,41 @@ import { AuditEvent } from "@tietokilta/ilmomasiina-models";
 import { AuditLogger } from "../../auditlog";
 import { getSequelize } from "../../models";
 import { Event } from "../../models/event";
-import { Quota } from "../../models/quota";
 import { Signup } from "../../models/signup";
+import { checkForConflictingPaymentsForSignupUpdate, expireExistingPaymentsForSignupUpdate } from "../payment/stripe";
 import { refreshSignupPositions } from "./computeSignupPosition";
 import { signupEditable } from "./createNewSignup";
 import { NoSuchSignup, SignupsClosed } from "./errors";
 
 /** Requires admin authentication OR editTokenVerification */
 async function deleteSignup(id: string, auditLogger: AuditLogger, admin: boolean = false): Promise<void> {
+  await expireExistingPaymentsForSignupUpdate(id);
+
   const event = await getSequelize().transaction(async (transaction) => {
     const signup = await Signup.scope("active").findByPk(id, {
-      include: [
-        {
-          model: Quota,
-          attributes: ["id"],
-          include: [
-            {
-              model: Event,
-              attributes: ["id", "title", "registrationStartDate", "registrationEndDate", "openQuotaSize"],
-            },
-          ],
-        },
-      ],
       transaction,
+      lock: transaction.LOCK.UPDATE,
     });
     if (signup === null) {
       throw new NoSuchSignup("No signup found with id");
     }
+
+    // Ensure there are no payments that could be paid with stale data.
+    // This needs to also be done for deletion, since we use soft delete and thus aren't
+    // firing ON DELETE RESTRICT constraints.
+    await checkForConflictingPaymentsForSignupUpdate(signup, transaction);
+
+    signup.quota = await signup.getQuota({
+      attributes: ["id"],
+      include: [
+        {
+          model: Event,
+          attributes: ["id", "title", "registrationStartDate", "registrationEndDate", "openQuotaSize"],
+        },
+      ],
+      transaction,
+    });
+
     if (!admin && !signupEditable(signup.quota!.event!, signup)) {
       throw new SignupsClosed("Signups closed for this event.");
     }

@@ -14,19 +14,17 @@ import type {
   SignupUpdateResponse,
   SignupValidationErrors,
 } from "@tietokilta/ilmomasiina-models";
-import { AuditEvent, PaymentStatus, QuestionType, SignupFieldError } from "@tietokilta/ilmomasiina-models";
+import { AuditEvent, QuestionType, SignupFieldError } from "@tietokilta/ilmomasiina-models";
 import config from "../../config";
 import sendSignupConfirmationMail from "../../mail/signupConfirmation";
 import { getSequelize } from "../../models";
 import { Answer, AnswerCreationAttributes } from "../../models/answer";
 import { Event } from "../../models/event";
-import { Payment } from "../../models/payment";
 import { Question } from "../../models/question";
 import { Quota } from "../../models/quota";
 import { Signup } from "../../models/signup";
 import { formatSignupForAdmin } from "../events/getEventDetails";
-import { PaymentInProgress, SignupAlreadyPaid } from "../payment/errors";
-import { expirePaymentForSignupUpdate } from "../payment/stripe";
+import { checkForConflictingPaymentsForSignupUpdate, expireExistingPaymentsForSignupUpdate } from "../payment/stripe";
 import type { StringifyApi } from "../utils";
 import { refreshSignupPositions } from "./computeSignupPosition";
 import { signupEditable } from "./createNewSignup";
@@ -254,34 +252,6 @@ export function computePrice(products: ProductSchema[]): Partial<Signup> {
   };
 }
 
-/**
- * Attempts to expire any existing payments for a signup.
- *
- * For PENDING payments, expires the Stripe Checkout Session first, then marks as EXPIRED in database.
- * For CREATING payments, marks them as CREATION_FAILED (causing transition to PENDING to fail).
- *
- * Errors from concurrent state changes are ignored. This function is only best-effort; the actual
- * check for conflicting payments is done in updateExistingSignup() once a lock is held.
- */
-async function expireExistingPayments(signupId: string): Promise<void> {
-  // Find any active payments
-  const activePayments = await Payment.scope("active").findAll({
-    where: { signupId },
-  });
-
-  // There should only ever be one active payment, but handle all just in case.
-  await Promise.all(
-    activePayments.map(async (payment) => {
-      await expirePaymentForSignupUpdate(payment);
-
-      if (payment.status === PaymentStatus.PAID) {
-        // This would definitely fail later.
-        throw new SignupAlreadyPaid("This signup has already been paid");
-      }
-    }),
-  );
-}
-
 /** Internal function to fetch all data required for updating a signup. */
 async function getSignupAndEventForUpdate(id: SignupID, transaction: Transaction) {
   // Retrieve event data and lock the row for editing
@@ -320,17 +290,8 @@ async function updateExistingSignup(
   answerProducts: ProductSchema[],
   transaction: Transaction,
 ) {
-  // Before actually updating, ensure no active payments exist.
-  const conflictingPayment = await signup.getActivePayment({ transaction });
-  // Since we hold the lock on the signup and startPayment() also attempts to do so,
-  // we know there are no uncommitted payments about to be created that this couldn't see.
-
-  if (conflictingPayment?.status === PaymentStatus.PAID) {
-    throw new SignupAlreadyPaid("This signup has already been paid");
-  }
-  if (conflictingPayment) {
-    throw new PaymentInProgress("Active payment exists for this signup");
-  }
+  // Ensure there are no payments that could be paid with stale data.
+  await checkForConflictingPaymentsForSignupUpdate(signup, transaction);
 
   // Get possible product line for the quota
   const quotaProducts = getQuotaProducts(signup.quota!);
@@ -371,7 +332,7 @@ export async function updateSignupAsUser(
   reply: FastifyReply,
 ): Promise<SignupUpdateResponse> {
   // First, attempt to expire any existing payments for this signup.
-  await expireExistingPayments(request.params.id);
+  await expireExistingPaymentsForSignupUpdate(request.params.id);
 
   const { updatedSignup, updatedAnswers, edited } = await getSequelize().transaction(async (transaction) => {
     const { signup, event } = await getSignupAndEventForUpdate(request.params.id, transaction);
@@ -453,7 +414,7 @@ export async function updateSignupAsAdmin(
   reply: FastifyReply,
 ): Promise<AdminSignupSchema> {
   // First, attempt to expire any existing payments for this signup.
-  await expireExistingPayments(request.params.id);
+  await expireExistingPaymentsForSignupUpdate(request.params.id);
 
   const updatedSignup = await getSequelize().transaction(async (transaction) => {
     const { signup, event } = await getSignupAndEventForUpdate(request.params.id, transaction);
