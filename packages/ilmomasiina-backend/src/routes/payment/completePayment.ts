@@ -4,7 +4,7 @@ import { PaymentStatus, SignupForEditResponse, SignupPathParams } from "@tietoki
 import { Payment } from "../../models/payment";
 import getSignupForEdit from "../signups/getSignupForEdit";
 import { PaymentNotComplete, PaymentNotFound } from "./errors";
-import { refreshCheckoutSession } from "./index";
+import { refreshCheckoutSession } from "./stripe";
 
 /** Requires editTokenVerification */
 export default async function completePayment(

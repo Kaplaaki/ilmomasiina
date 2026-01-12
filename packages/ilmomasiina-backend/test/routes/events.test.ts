@@ -1,29 +1,15 @@
 import { sortBy } from "lodash";
 import { describe, expect, test } from "vitest";
 
-import { EventListQuery, PaymentMode, UserEventListResponse, UserEventResponse } from "@tietokilta/ilmomasiina-models";
-import { Event } from "../../src/models/event";
-import { handleTestResponse } from "../requests";
+import { PaymentMode } from "@tietokilta/ilmomasiina-models";
 import { fetchSignups, testEvent, testSignups } from "../testData";
-
-async function fetchUserEventList(query?: EventListQuery) {
-  const response = await server.inject({ method: "GET", url: "/api/events", query: query as Record<string, string> });
-  return handleTestResponse<UserEventListResponse>(response);
-}
-
-async function fetchUserEventDetails(event: Event) {
-  const response = await server.inject({
-    method: "GET",
-    url: `/api/events/${event.slug}`,
-  });
-  return handleTestResponse<UserEventResponse>(response);
-}
+import * as api from "./api";
 
 describe("GET /api/events/:id", () => {
   test("returns event information", async () => {
     // Enable payments to not scrub any fields when saving
     const event = await testEvent({}, { payments: PaymentMode.ONLINE });
-    const [data, response] = await fetchUserEventDetails(event);
+    const [data, response] = await api.fetchUserEventDetails(event);
 
     expect(response.statusCode).toBe(200);
 
@@ -78,7 +64,7 @@ describe("GET /api/events/:id", () => {
 
   test("does not return past events", async () => {
     const event = await testEvent({ inPast: 8 * 30 }); // past the default 6-month cutoff
-    const [data, response] = await fetchUserEventDetails(event);
+    const [data, response] = await api.fetchUserEventDetails(event);
 
     expect(response.statusCode).toBe(404);
     expect(data.slug).toBe(undefined);
@@ -86,7 +72,7 @@ describe("GET /api/events/:id", () => {
 
   test("returns unlisted events", async () => {
     const event = await testEvent({}, { listed: false });
-    const [data, response] = await fetchUserEventDetails(event);
+    const [data, response] = await api.fetchUserEventDetails(event);
 
     expect(response.statusCode).toBe(200);
     expect(data.slug).toBe(event.slug);
@@ -94,7 +80,7 @@ describe("GET /api/events/:id", () => {
 
   test("does not return draft events", async () => {
     const event = await testEvent({}, { draft: true });
-    const [data, response] = await fetchUserEventDetails(event);
+    const [data, response] = await api.fetchUserEventDetails(event);
 
     expect(response.statusCode).toBe(404);
     expect(data.slug).toBe(undefined);
@@ -102,13 +88,13 @@ describe("GET /api/events/:id", () => {
 
   test("returns correct information about signup opening", async () => {
     let event = await testEvent({ signupState: "open" });
-    let [data] = await fetchUserEventDetails(event);
+    let [data] = await api.fetchUserEventDetails(event);
 
     expect(data.registrationClosed).toBe(false);
     expect(data.millisTillOpening).toBe(0);
 
     event = await testEvent({ signupState: "not-open" });
-    [data] = await fetchUserEventDetails(event);
+    [data] = await api.fetchUserEventDetails(event);
 
     const expectedMillisTillOpening = event.registrationStartDate!.getTime() - Date.now();
     expect(data.registrationClosed).toBe(false);
@@ -116,7 +102,7 @@ describe("GET /api/events/:id", () => {
     expect(data.millisTillOpening).toBeLessThan(expectedMillisTillOpening + 500);
 
     event = await testEvent({ signupState: "closed" });
-    [data] = await fetchUserEventDetails(event);
+    [data] = await api.fetchUserEventDetails(event);
 
     expect(data.registrationClosed).toBe(true);
     expect(data.millisTillOpening).toBe(0);
@@ -124,14 +110,14 @@ describe("GET /api/events/:id", () => {
 
   test("returns questions in correct order", async () => {
     const event = await testEvent({ questionCount: 3 });
-    const [before] = await fetchUserEventDetails(event);
+    const [before] = await api.fetchUserEventDetails(event);
 
     expect(before.questions.map((q) => q.id)).toEqual(sortBy(event.questions!, "order").map((q) => q.id));
 
     await event.questions!.at(-1)!.update({ order: 0 });
     await event.questions![0].update({ order: event.questions!.length - 1 });
 
-    const [after] = await fetchUserEventDetails(event);
+    const [after] = await api.fetchUserEventDetails(event);
 
     expect(before.questions.map((q) => q.id)).not.toEqual(after.questions.map((q) => q.id));
     expect(after.questions.map((q) => q.id)).toEqual(sortBy(event.questions!, "order").map((q) => q.id));
@@ -139,14 +125,14 @@ describe("GET /api/events/:id", () => {
 
   test("returns quotas in correct order", async () => {
     const event = await testEvent({ quotaCount: 3 });
-    const [before] = await fetchUserEventDetails(event);
+    const [before] = await api.fetchUserEventDetails(event);
 
     expect(before.quotas.map((q) => q.id)).toEqual(sortBy(event.quotas!, "order").map((q) => q.id));
 
     await event.quotas!.at(-1)!.update({ order: 0 });
     await event.quotas![0].update({ order: event.quotas!.length - 1 });
 
-    const [after] = await fetchUserEventDetails(event);
+    const [after] = await api.fetchUserEventDetails(event);
 
     expect(before.quotas.map((q) => q.id)).not.toEqual(after.quotas.map((q) => q.id));
     expect(after.quotas.map((q) => q.id)).toEqual(sortBy(event.quotas!, "order").map((q) => q.id));
@@ -157,7 +143,7 @@ describe("GET /api/events/:id", () => {
     await testSignups(event, { count: 10, confirmed: true }, { namePublic: true });
     await fetchSignups(event);
 
-    const [data] = await fetchUserEventDetails(event);
+    const [data] = await api.fetchUserEventDetails(event);
 
     for (const quota of event.quotas!) {
       const found = data.quotas.find((q) => q.id === quota.id);
@@ -181,7 +167,7 @@ describe("GET /api/events/:id", () => {
     const event = await testEvent({ quotaCount: 3 }, { signupsPublic: false });
     await testSignups(event);
 
-    const [data] = await fetchUserEventDetails(event);
+    const [data] = await api.fetchUserEventDetails(event);
 
     for (const quota of data.quotas) {
       expect(quota.signups).toEqual([]);
@@ -192,7 +178,7 @@ describe("GET /api/events/:id", () => {
     const event = await testEvent({ quotaCount: 1 }, { signupsPublic: true });
     await testSignups(event, { confirmed: true }, { namePublic: false });
 
-    const [data] = await fetchUserEventDetails(event);
+    const [data] = await api.fetchUserEventDetails(event);
 
     expect(data.quotas[0].signups.length).toBeGreaterThanOrEqual(1);
     for (const signup of data.quotas[0].signups) {
@@ -207,7 +193,7 @@ describe("GET /api/events/:id", () => {
     await fetchSignups(event);
 
     await event.questions![0].update({ public: true });
-    const [before] = await fetchUserEventDetails(event);
+    const [before] = await api.fetchUserEventDetails(event);
 
     const signup = event.quotas![0].signups![0];
     expect(before.quotas[0].signups).toMatchObject([
@@ -222,7 +208,7 @@ describe("GET /api/events/:id", () => {
     ]);
 
     await event.questions![0].update({ public: false });
-    const [after] = await fetchUserEventDetails(event);
+    const [after] = await api.fetchUserEventDetails(event);
 
     expect(after.quotas[0].signups).toMatchObject([
       {
@@ -236,7 +222,7 @@ describe("GET /api/events/:id", () => {
     await testSignups(event, { count: 10 });
     await fetchSignups(event);
 
-    const [data] = await fetchUserEventDetails(event);
+    const [data] = await api.fetchUserEventDetails(event);
 
     for (const quota of event.quotas!) {
       const found = data.quotas.find((q) => q.id === quota.id);
@@ -250,7 +236,7 @@ describe("GET /api/events", () => {
   test("returns event information", async () => {
     // Enable payments to not scrub any fields when saving
     const event = await testEvent({}, { payments: PaymentMode.MANUAL });
-    const [data, response] = await fetchUserEventList();
+    const [data, response] = await api.fetchUserEventList();
 
     expect(response.statusCode).toBe(200);
 
@@ -295,7 +281,7 @@ describe("GET /api/events", () => {
     await testSignups(event, { count: 10 });
     await fetchSignups(event);
 
-    const [data] = await fetchUserEventList();
+    const [data] = await api.fetchUserEventList();
 
     for (const quota of event.quotas!) {
       const found = data[0].quotas.find((q) => q.id === quota.id);
@@ -306,21 +292,21 @@ describe("GET /api/events", () => {
 
   test("does not return past events", async () => {
     await testEvent({ inPast: 8 * 30 }); // past the default 6-month cutoff
-    const [data] = await fetchUserEventList();
+    const [data] = await api.fetchUserEventList();
 
     expect(data).toEqual([]);
   });
 
   test("does not return unlisted events", async () => {
     await testEvent({}, { listed: false });
-    const [data] = await fetchUserEventList();
+    const [data] = await api.fetchUserEventList();
 
     expect(data).toEqual([]);
   });
 
   test("does not return draft events", async () => {
     await testEvent({}, { draft: true });
-    const [data] = await fetchUserEventList();
+    const [data] = await api.fetchUserEventList();
 
     expect(data).toEqual([]);
   });
@@ -331,19 +317,19 @@ describe("GET /api/events", () => {
     const oldButVisible = await testEvent({ inPast: 3 * 30 }); // within default 6-month cutoff, not visible by default
     await testEvent({ inPast: 8 * 30 }); // past default 6-month cutoff
 
-    const [data] = await fetchUserEventList();
+    const [data] = await api.fetchUserEventList();
     expect(data.map((e) => e.slug).sort()).toEqual([alwaysVisible.slug, defaultVisible.slug].sort());
 
-    const [data2] = await fetchUserEventList({ maxAge: 0 });
+    const [data2] = await api.fetchUserEventList({ maxAge: 0 });
     expect(data2.map((e) => e.slug).sort()).toEqual([alwaysVisible.slug].sort());
 
-    const [data3] = await fetchUserEventList({ maxAge: 6 * 30 });
+    const [data3] = await api.fetchUserEventList({ maxAge: 6 * 30 });
     expect(data3.map((e) => e.slug).sort()).toEqual(
       [alwaysVisible.slug, defaultVisible.slug, oldButVisible.slug].sort(),
     );
 
     // ensure the 6-month cutoff can't be bypassed
-    const [data4] = await fetchUserEventList({ maxAge: 12 * 30 });
+    const [data4] = await api.fetchUserEventList({ maxAge: 12 * 30 });
     expect(data4.map((e) => e.slug).sort()).toEqual(
       [alwaysVisible.slug, defaultVisible.slug, oldButVisible.slug].sort(),
     );
@@ -351,14 +337,14 @@ describe("GET /api/events", () => {
 
   test("returns quotas in correct order", async () => {
     const event = await testEvent({ quotaCount: 3 });
-    const [before] = await fetchUserEventList();
+    const [before] = await api.fetchUserEventList();
 
     expect(before[0].quotas.map((q) => q.id)).toEqual(sortBy(event.quotas!, "order").map((q) => q.id));
 
     await event.quotas!.at(-1)!.update({ order: 0 });
     await event.quotas![0].update({ order: event.quotas!.length - 1 });
 
-    const [after] = await fetchUserEventList();
+    const [after] = await api.fetchUserEventList();
 
     expect(before[0].quotas.map((q) => q.id)).not.toEqual(after[0].quotas.map((q) => q.id));
     expect(after[0].quotas.map((q) => q.id)).toEqual(sortBy(event.quotas!, "order").map((q) => q.id));

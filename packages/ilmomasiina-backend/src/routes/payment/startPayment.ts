@@ -25,9 +25,9 @@ import {
   SignupAlreadyPaid,
   SignupNotConfirmed,
 } from "./errors";
-import { createCheckoutSession, getStripe, refreshCheckoutSession } from "./index";
+import { createCheckoutSession, getStripe, refreshCheckoutSession } from "./stripe";
 
-/** Create a new payment and Stripe checkout session. */
+/** Create a new Payment and Stripe checkout session from the given signup. */
 async function createPayment(signupId: SignupID): Promise<string> {
   const expiresAt = moment().add(config.stripeCheckoutExpiryMins, "minutes");
   // Stripe requires at least 30 minutes expiry; add some buffer for making the request.
@@ -97,7 +97,7 @@ async function createPayment(signupId: SignupID): Promise<string> {
     );
   } catch (error) {
     if (error instanceof DatabaseError && (error.parent as PgDatabaseError).code === "P0001") {
-      throw new Error("Payment creation failed due to concurrent update");
+      throw new PaymentInProgress("Payment creation failed due to concurrent update");
     }
     throw error;
   }

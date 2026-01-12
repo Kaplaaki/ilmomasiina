@@ -13,3 +13,17 @@ declare global {
   var adminUser: User;
   var adminToken: string;
 }
+
+// expect.extend() matchers defined in setup.ts
+interface CustomMatchers<R = unknown> {
+  /**
+   * Checks if the result is an API error with the expected status and optional code,
+   * as returned by the wrapper functions in `api.ts`.
+   */
+  toBeApiError: (expectedStatus: number, expectedCode?: string) => R;
+}
+
+declare module "vitest" {
+  interface Assertion<T = any> extends CustomMatchers<T> {}
+  interface AsymmetricMatchersContaining extends CustomMatchers {}
+}

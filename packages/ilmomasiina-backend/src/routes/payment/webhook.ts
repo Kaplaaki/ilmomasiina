@@ -3,7 +3,7 @@ import { BadRequest } from "http-errors";
 import Stripe from "stripe";
 
 import config from "../../config";
-import { checkoutSessionStatusUpdated, getStripe } from "./index";
+import { checkoutSessionStatusUpdated, getStripe } from "./stripe";
 
 /** Handle incoming Stripe webhooks. */
 export default async function stripeWebhook(request: FastifyRequest, reply: FastifyReply): Promise<unknown> {

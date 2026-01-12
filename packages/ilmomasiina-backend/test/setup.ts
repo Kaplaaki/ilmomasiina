@@ -1,5 +1,5 @@
 import { faker } from "@faker-js/faker";
-import { afterAll, afterEach, beforeAll, beforeEach, RunnerTaskBase, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, expect, RunnerTaskBase, vi } from "vitest";
 
 import initApp from "../src/app";
 import EmailService from "../src/mail";
@@ -65,4 +65,33 @@ beforeAll(() => {
 });
 afterEach(() => {
   emailSend.mockClear();
+});
+
+expect.extend({
+  toBeApiError(received: unknown, expectedStatus: number, expectedCode?: string) {
+    if (!Array.isArray(received) || received.length !== 2) {
+      throw new Error("toBeApiError matcher expects an array of [data, response]");
+    }
+    const [data, response] = received;
+    if (response.statusCode !== expectedStatus) {
+      return {
+        pass: false,
+        message: () => `Expected status code ${expectedStatus}, but received ${response.statusCode}`,
+        expected: expectedStatus,
+        actual: response.statusCode,
+      };
+    }
+    if (expectedCode && (data as any)?.code !== expectedCode) {
+      return {
+        pass: false,
+        message: () => `Expected error code '${expectedCode}', but received '${(data as any)?.code}'`,
+        expected: expectedCode,
+        actual: (data as any)?.code,
+      };
+    }
+    return {
+      pass: true,
+      message: () => "Received expected API error",
+    };
+  },
 });

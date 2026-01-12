@@ -1,0 +1,748 @@
+import moment from "moment";
+import { Op } from "sequelize";
+import Stripe from "stripe";
+import { testEvent, testSignups } from "test/testData";
+import { beforeAll, beforeEach, describe, expect, Mock, test, vi } from "vitest";
+
+import { ErrorCode, PaymentMode, PaymentStatus } from "@tietokilta/ilmomasiina-models";
+import { Payment } from "../../src/models/payment";
+import { Signup } from "../../src/models/signup";
+import { checkoutSessionStatusUpdated, expirePaymentForSignupUpdate, getStripe } from "../../src/routes/payment/stripe";
+import { deferred } from "../deferred";
+import * as api from "./api";
+
+// Mock Stripe API methods
+let mockStripeCheckoutSessionCreate: Mock<Stripe.Checkout.SessionsResource["create"]>;
+let mockStripeCheckoutSessionExpire: Mock<Stripe.Checkout.SessionsResource["expire"]>;
+let mockStripeCheckoutSessionRetrieve: Mock<Stripe.Checkout.SessionsResource["retrieve"]>;
+
+type MockCheckoutSession = Pick<Stripe.Checkout.Session, "id" | "status" | "url">;
+
+let nextMockId = 123;
+const mockCheckoutSessions = new Map<string, MockCheckoutSession>();
+
+function createMockCheckoutSession(): Stripe.Response<Stripe.Checkout.Session> {
+  const id = `cs_test_${nextMockId}`;
+  nextMockId += 1;
+  const session: MockCheckoutSession = {
+    id,
+    url: `https://checkout.stripe.test/pay/${id}`,
+    status: "open",
+  };
+  mockCheckoutSessions.set(id, session);
+  return session as Stripe.Response<Stripe.Checkout.Session>;
+}
+
+beforeAll(async () => {
+  // Import the actual payment module to get access to the Stripe client
+  const stripe = getStripe();
+
+  // Mock the Stripe API methods
+  mockStripeCheckoutSessionCreate = vi.spyOn(stripe.checkout.sessions, "create");
+  mockStripeCheckoutSessionExpire = vi.spyOn(stripe.checkout.sessions, "expire");
+  mockStripeCheckoutSessionRetrieve = vi.spyOn(stripe.checkout.sessions, "retrieve");
+});
+
+beforeEach(() => {
+  if (mockStripeCheckoutSessionCreate) {
+    mockStripeCheckoutSessionCreate.mockClear();
+    mockStripeCheckoutSessionExpire.mockClear();
+    mockStripeCheckoutSessionRetrieve.mockClear();
+
+    // Default mock implementation for creating checkout sessions
+    mockStripeCheckoutSessionCreate.mockImplementation(async () => createMockCheckoutSession());
+    // Default mock implementation for expiring checkout sessions
+    mockStripeCheckoutSessionExpire.mockImplementation(async (sessionId) => {
+      const session = mockCheckoutSessions.get(sessionId);
+      if (!session) {
+        throw new Stripe.errors.StripeInvalidRequestError({ type: "invalid_request_error" });
+      }
+      if (session.status !== "open") {
+        throw new Stripe.errors.StripeInvalidRequestError({ type: "invalid_request_error" });
+      }
+      session.status = "expired";
+      return session as Stripe.Response<Stripe.Checkout.Session>;
+    });
+
+    // Default mock implementation for retrieving checkout sessions
+    mockStripeCheckoutSessionRetrieve.mockImplementation(async (sessionId) => {
+      const session = mockCheckoutSessions.get(sessionId);
+      if (!session) {
+        throw new Stripe.errors.StripeInvalidRequestError({ type: "invalid_request_error" });
+      }
+      return session as Stripe.Response<Stripe.Checkout.Session>;
+    });
+  }
+});
+
+/** Creates a test event and signup for the most common payment test cases. */
+async function defaultTestEventAndSignup() {
+  const event = await testEvent(
+    { quotaCount: 1, questionCount: 0 },
+    { payments: PaymentMode.ONLINE, nameQuestion: true, emailQuestion: true },
+  );
+  const [signup] = await testSignups(event, { count: 1, confirmed: true });
+  return { event, signup };
+}
+
+/** Directly creates a payment in the database, granting more control than startPayment() */
+function createMockPayment(
+  signup: Signup,
+  status: PaymentStatus = PaymentStatus.PENDING,
+  session?: MockCheckoutSession,
+) {
+  return Payment.create({
+    signupId: signup.id,
+    amount: signup.price!,
+    currency: signup.currency!,
+    products: signup.products!,
+    expiresAt: moment().add(1, "hour").toDate(),
+    status,
+    stripeCheckoutSessionId: session?.id,
+    completedAt: status === PaymentStatus.PAID || status === PaymentStatus.REFUNDED ? new Date() : null,
+  });
+}
+
+describe("startPayment", () => {
+  test("creates a new payment and Stripe checkout session", async () => {
+    const { signup } = await defaultTestEventAndSignup();
+
+    const [data, response] = await api.startPayment(signup.id);
+    expect(response.statusCode).toBe(200);
+    expect(data.paymentUrl).toEqual(expect.stringContaining("https://checkout.stripe.test/pay/"));
+
+    // Verify payment was created in database
+    const payment = await signup.getActivePayment();
+    expect(payment).toBeTruthy();
+    expect(payment!.status).toBe(PaymentStatus.PENDING);
+
+    expect(mockStripeCheckoutSessionCreate).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining<Stripe.Checkout.SessionCreateParams>({
+        mode: "payment",
+        ui_mode: "hosted",
+        allow_promotion_codes: true,
+        customer_email: signup.email!,
+        success_url: expect.any(String),
+        cancel_url: expect.any(String),
+        expires_at: moment(payment.expiresAt).unix(),
+        metadata: {
+          signupId: payment.signupId,
+          paymentId: String(payment.id),
+        },
+      }),
+    );
+  });
+
+  test("reuses existing PENDING payment that is still open in Stripe", async () => {
+    const { signup } = await defaultTestEventAndSignup();
+
+    // Create initial payment
+    const [data, response] = await api.startPayment(signup.id);
+    expect(response.statusCode).toBe(200);
+
+    // Start payment again - should reuse existing payment
+    const [data2, response2] = await api.startPayment(signup.id);
+    expect(response2.statusCode).toBe(200);
+
+    // Verify same payment URL returned
+    expect(data2.paymentUrl).toBe(data.paymentUrl);
+
+    // Verify only one payment exists
+    expect(await Payment.count({ where: { signupId: signup.id } })).toBe(1);
+    expect(mockStripeCheckoutSessionCreate).toHaveBeenCalledOnce();
+    expect(mockStripeCheckoutSessionExpire).not.toHaveBeenCalled();
+  });
+
+  test("handles PENDING payment that has expired in Stripe", async () => {
+    const { signup } = await defaultTestEventAndSignup();
+
+    // Create initial payment
+    const [data, response] = await api.startPayment(signup.id);
+    expect(response.statusCode).toBe(200);
+
+    // Make the payment expired in Stripe
+    const payment = await Payment.findOne({ where: { signupId: signup.id } });
+    const session = mockCheckoutSessions.get(payment!.stripeCheckoutSessionId!);
+    session!.status = "expired";
+
+    // Start payment again - should create a new payment
+    const [data2, response2] = await api.startPayment(signup.id);
+    expect(response2.statusCode).toBe(200);
+    expect(data2.paymentUrl).not.toBe(data.paymentUrl);
+
+    // Verify two payments exist, first marked as EXPIRED
+    const payments = await Payment.findAll({ where: { signupId: signup.id }, order: [["createdAt", "ASC"]] });
+    expect(payments).toHaveLength(2);
+    expect(payments[0].status).toBe(PaymentStatus.EXPIRED);
+    expect(payments[1].status).toBe(PaymentStatus.PENDING);
+
+    expect(mockStripeCheckoutSessionCreate).toHaveBeenCalledTimes(2);
+    expect(mockStripeCheckoutSessionExpire).not.toHaveBeenCalled();
+  });
+
+  test("handles PENDING payment that has been paid in Stripe", async () => {
+    const { signup } = await defaultTestEventAndSignup();
+
+    // Create initial payment
+    const [, response] = await api.startPayment(signup.id);
+    expect(response.statusCode).toBe(200);
+
+    // Make the payment expired in Stripe
+    const payment = await Payment.findOne({ where: { signupId: signup.id } });
+    const session = mockCheckoutSessions.get(payment!.stripeCheckoutSessionId!);
+    session!.status = "complete";
+
+    // Start payment again - should error as already paid
+    const result = await api.startPayment(signup.id);
+    expect(result).toBeApiError(400, ErrorCode.SIGNUP_ALREADY_PAID);
+
+    expect(mockStripeCheckoutSessionCreate).toHaveBeenCalledOnce();
+    expect(mockStripeCheckoutSessionExpire).not.toHaveBeenCalled();
+  });
+
+  test("throws PaymentInProgress when CREATING payment exists", async () => {
+    const { signup } = await defaultTestEventAndSignup();
+
+    // Create a CREATING payment
+    await createMockPayment(signup, PaymentStatus.CREATING);
+
+    // Attempt to start payment - should fail
+    const result = await api.startPayment(signup.id);
+    expect(result).toBeApiError(409, ErrorCode.PAYMENT_IN_PROGRESS);
+
+    expect(mockStripeCheckoutSessionCreate).not.toHaveBeenCalled();
+  });
+
+  test("throws SignupAlreadyPaid when PAID payment exists", async () => {
+    const { signup } = await defaultTestEventAndSignup();
+
+    // Create a PAID payment
+    const session = await getStripe().checkout.sessions.create();
+    await createMockPayment(signup, PaymentStatus.PAID, session);
+
+    // Attempt to start payment - should fail
+    const result = await api.startPayment(signup.id);
+    expect(result).toBeApiError(400, ErrorCode.SIGNUP_ALREADY_PAID);
+
+    expect(mockStripeCheckoutSessionCreate).toHaveBeenCalledOnce(); // in test setup
+  });
+
+  test("creates new payment when CREATION_FAILED, EXPIRED or REFUNDED payment exists", async () => {
+    const { signup } = await defaultTestEventAndSignup();
+
+    // Create payments that should not block new payment creation
+    const expiredSession = await getStripe().checkout.sessions.create();
+    const refundedSession = await getStripe().checkout.sessions.create();
+    await createMockPayment(signup, PaymentStatus.CREATION_FAILED);
+    await createMockPayment(signup, PaymentStatus.EXPIRED, expiredSession);
+    await createMockPayment(signup, PaymentStatus.REFUNDED, refundedSession);
+
+    // Start payment - should create a new one
+    const [, response] = await api.startPayment(signup.id);
+    expect(response.statusCode).toBe(200);
+
+    // Verify payment was created in database
+    const payment = await signup.getActivePayment();
+    expect(payment).toBeTruthy();
+    expect(payment!.status).toBe(PaymentStatus.PENDING);
+
+    expect(mockStripeCheckoutSessionCreate).toHaveBeenCalledTimes(3); // twice for test setup + once internally
+    expect(mockStripeCheckoutSessionExpire).not.toHaveBeenCalled();
+  });
+
+  test("fails when signup is not confirmed", async () => {
+    const { event } = await defaultTestEventAndSignup();
+    const [signup] = await testSignups(event, { count: 1, confirmed: false });
+
+    const result = await api.startPayment(signup.id);
+    expect(result).toBeApiError(400, ErrorCode.SIGNUP_NOT_CONFIRMED);
+
+    expect(await Payment.findOne({ where: { signupId: signup.id } })).toBeNull();
+    expect(mockStripeCheckoutSessionCreate).not.toHaveBeenCalled();
+  });
+
+  test("fails when signup has no price", async () => {
+    const event = await testEvent(
+      { quotaCount: 2, questionCount: 0, quotaOverrides: { price: 0 } },
+      { payments: PaymentMode.ONLINE, nameQuestion: true, emailQuestion: true },
+    );
+    await event.quotas![1].update({ price: 1000 }); // Make only one quota paid
+
+    // Create a free signup
+    const [signup] = await testSignups(event, { count: 1, confirmed: true, quotaId: event.quotas![0].id });
+    expect(signup.price).toBe(0);
+    expect(signup.effectivePaymentStatus).toBe(null);
+
+    // Attempt to start payment - should fail
+    const result = await api.startPayment(signup.id);
+    expect(result).toBeApiError(400, ErrorCode.PAYMENT_NOT_REQUIRED);
+
+    expect(await Payment.findOne({ where: { signupId: signup.id } })).toBeNull();
+    expect(mockStripeCheckoutSessionCreate).not.toHaveBeenCalled();
+  });
+
+  test("fails when event has online payments disabled", async () => {
+    const { event, signup } = await defaultTestEventAndSignup();
+
+    // Attempt to start payment in manual mode - should fail
+    await event.update({ payments: PaymentMode.MANUAL });
+    let result = await api.startPayment(signup.id);
+    expect(result).toBeApiError(400, ErrorCode.ONLINE_PAYMENTS_DISABLED);
+
+    // Attempt to start payment in non-payment mode - should fail
+    await event.update({ payments: PaymentMode.DISABLED });
+    result = await api.startPayment(signup.id);
+    expect(result).toBeApiError(400, ErrorCode.ONLINE_PAYMENTS_DISABLED);
+
+    expect(await Payment.findOne({ where: { signupId: signup.id } })).toBeNull();
+    expect(mockStripeCheckoutSessionCreate).not.toHaveBeenCalled();
+  });
+
+  test.todo("fails when Stripe is not configured", async () => {
+    // TODO: Test that starting payment when Stripe is not configured globally
+    // throws OnlinePaymentsDisabled
+  });
+
+  test("fails gracefully when Stripe API errors", async () => {
+    const { signup } = await defaultTestEventAndSignup();
+
+    // Mock Stripe API to fail
+    mockStripeCheckoutSessionCreate.mockRejectedValueOnce(new Stripe.errors.StripeAPIError({ type: "api_error" }));
+
+    const result = await api.startPayment(signup.id, undefined, true);
+    expect(result).toBeApiError(500);
+
+    // Verify payment was marked as CREATION_FAILED
+    const payment = await Payment.findOne({ where: { signupId: signup.id } });
+    expect(payment!.status).toBe(PaymentStatus.CREATION_FAILED);
+  });
+
+  test("maps Stripe rate limit errors to 429", async () => {
+    const { signup } = await defaultTestEventAndSignup();
+
+    // Mock Stripe API to fail with rate limit error
+    mockStripeCheckoutSessionCreate.mockRejectedValueOnce(
+      new Stripe.errors.StripeRateLimitError({ type: "rate_limit_error" }),
+    );
+
+    const result = await api.startPayment(signup.id, undefined, true);
+    expect(result).toBeApiError(429, ErrorCode.PAYMENT_RATE_LIMITED);
+
+    // Verify payment was marked as CREATION_FAILED
+    const payment = await Payment.findOne({ where: { signupId: signup.id } });
+    expect(payment!.status).toBe(PaymentStatus.CREATION_FAILED);
+  });
+
+  test("can create multiple payments concurrently", async () => {
+    const event = await testEvent(
+      { quotaCount: 1, questionCount: 0 },
+      { payments: PaymentMode.ONLINE, nameQuestion: true, emailQuestion: true },
+    );
+    const signups = await testSignups(event, { count: 5, confirmed: true });
+
+    // Create payments for all signups concurrently
+    const results = await Promise.all(signups.map((signup) => api.startPayment(signup.id)));
+
+    // All should succeed with 200
+    expect(results.every(([, response]) => response.statusCode === 200)).toBe(true);
+
+    // Verify payments were created
+    const payments = await Payment.findAll({ where: { signupId: { [Op.in]: signups.map((s) => s.id) } } });
+    expect(payments).toHaveLength(signups.length);
+    expect(new Set(payments.map((p) => p.signupId))).toEqual(new Set(signups.map((s) => s.id)));
+    expect(payments.map((p) => p.status)).toEqual(signups.map(() => PaymentStatus.PENDING));
+  });
+});
+
+describe("payment and signup update locking", () => {
+  // TODO: These tests verify the correctness of the locking logic and state transitions,
+  //  but they do NOT test true concurrent/parallel execution with simulated race conditions.
+
+  test("signup update expires existing PENDING payment", async () => {
+    const { signup } = await defaultTestEventAndSignup();
+
+    // Create a PENDING payment
+    await api.startPayment(signup.id);
+    const payment = await Payment.findOne({ where: { signupId: signup.id } });
+    expect(payment).toBeTruthy();
+    expect(payment!.status).toBe(PaymentStatus.PENDING);
+
+    // Update signup
+    const [, response] = await api.updateSignupAsUser(signup.id, { namePublic: true, answers: [] });
+    expect(response.statusCode).toBe(200);
+
+    // Verify the payment was expired
+    await payment!.reload();
+    expect(payment!.status).toBe(PaymentStatus.EXPIRED);
+    expect(mockStripeCheckoutSessionExpire).toHaveBeenCalledExactlyOnceWith(payment!.stripeCheckoutSessionId!);
+  });
+
+  test("signup deletion expires existing PENDING payment", async () => {
+    const { signup } = await defaultTestEventAndSignup();
+
+    // Create a PENDING payment
+    await api.startPayment(signup.id);
+    const payment = await Payment.findOne({ where: { signupId: signup.id } });
+    expect(payment).toBeTruthy();
+    expect(payment!.status).toBe(PaymentStatus.PENDING);
+
+    // Delete signup
+    const [, response] = await api.deleteSignupAsUser(signup.id);
+    expect(response.statusCode).toBe(204);
+
+    // Verify the payment was expired
+    await payment!.reload();
+    expect(payment!.status).toBe(PaymentStatus.EXPIRED);
+    expect(mockStripeCheckoutSessionExpire).toHaveBeenCalledExactlyOnceWith(payment!.stripeCheckoutSessionId!);
+  });
+
+  test("signup update blocked when PAID payment exists", async () => {
+    const { signup } = await defaultTestEventAndSignup();
+
+    // Create a payment
+    await api.startPayment(signup.id);
+    const payment = await Payment.findOne({ where: { signupId: signup.id } });
+    // Mark payment as PAID via webhook simulation
+    await checkoutSessionStatusUpdated(payment!.stripeCheckoutSessionId!, "complete");
+
+    // Attempt to update signup - should fail
+    const result = await api.updateSignupAsUser(signup.id, { firstName: "Changed!", answers: [] });
+    expect(result).toBeApiError(400, ErrorCode.SIGNUP_ALREADY_PAID);
+
+    // Verify signup was not changed
+    await signup.reload();
+    expect(signup.firstName).not.toBe("Changed!");
+  });
+
+  test("signup deletion blocked when PAID payment exists", async () => {
+    const { signup } = await defaultTestEventAndSignup();
+
+    // Create a payment
+    await api.startPayment(signup.id);
+    const payment = await Payment.findOne({ where: { signupId: signup.id } });
+    // Mark payment as PAID via webhook simulation
+    await checkoutSessionStatusUpdated(payment!.stripeCheckoutSessionId!, "complete");
+
+    // Attempt to delete signup - should fail
+    const result = await api.deleteSignupAsUser(signup.id);
+    expect(result).toBeApiError(400, ErrorCode.SIGNUP_ALREADY_PAID);
+
+    // Will fail if deleted or soft deleted
+    await signup.reload();
+  });
+
+  test("signup update blocks ongoing payment creation by marking as CREATION_FAILED", async () => {
+    const { signup } = await defaultTestEventAndSignup();
+
+    const stripeMockRequest = deferred<void>();
+    const stripeMockResponse = deferred<void>();
+    mockStripeCheckoutSessionCreate.mockImplementationOnce(async () => {
+      // Let the test proceed when called, then wait for signal to continue
+      stripeMockRequest.resolve();
+      await stripeMockResponse.promise;
+      return createMockCheckoutSession();
+    });
+
+    // Start payment creation
+    const startPaymentPromise = api.startPayment(signup.id);
+    await stripeMockRequest.promise; // Wait until Stripe create is called
+
+    // Verify payment exists in CREATING state
+    const payment = await Payment.findOne({ where: { signupId: signup.id } });
+    expect(payment).toBeTruthy();
+    expect(payment!.status).toBe(PaymentStatus.CREATING);
+
+    // Attempt signup update - should mark payment as CREATION_FAILED
+    await api.updateSignupAsUser(signup.id, { namePublic: true, answers: [] });
+
+    // Verify the payment was marked as CREATION_FAILED
+    await payment!.reload();
+    expect(payment!.status).toBe(PaymentStatus.CREATION_FAILED);
+
+    // Pretend Stripe create responded - the creation should now fail due to CREATION_FAILED state
+    stripeMockResponse.resolve();
+    stripeMockResponse.resolve();
+
+    const result = await startPaymentPromise;
+    expect(result).toBeApiError(409, ErrorCode.PAYMENT_IN_PROGRESS);
+    expect(mockStripeCheckoutSessionCreate).toHaveBeenCalledOnce();
+  });
+
+  test("signup deletion blocks ongoing payment creation by marking as CREATION_FAILED", async () => {
+    const { signup } = await defaultTestEventAndSignup();
+
+    const stripeMockRequest = deferred<void>();
+    const stripeMockResponse = deferred<void>();
+    mockStripeCheckoutSessionCreate.mockImplementationOnce(async () => {
+      // Let the test proceed when called, then wait for signal to continue
+      stripeMockRequest.resolve();
+      await stripeMockResponse.promise;
+      return createMockCheckoutSession();
+    });
+
+    // Start payment creation
+    const startPaymentPromise = api.startPayment(signup.id);
+    await stripeMockRequest.promise; // Wait until Stripe create is called
+
+    // Verify payment exists in CREATING state
+    const payment = await Payment.findOne({ where: { signupId: signup.id } });
+    expect(payment).toBeTruthy();
+    expect(payment!.status).toBe(PaymentStatus.CREATING);
+
+    // Attempt signup deletion - should mark payment as CREATION_FAILED
+    await api.deleteSignupAsUser(signup.id);
+
+    // Verify the payment was marked as CREATION_FAILED
+    await payment!.reload();
+    expect(payment!.status).toBe(PaymentStatus.CREATION_FAILED);
+
+    // Pretend Stripe create responded - the creation should now fail due to CREATION_FAILED state
+    stripeMockResponse.resolve();
+    stripeMockResponse.resolve();
+
+    const result = await startPaymentPromise;
+    expect(result).toBeApiError(409, ErrorCode.PAYMENT_IN_PROGRESS);
+    expect(mockStripeCheckoutSessionCreate).toHaveBeenCalledOnce();
+  });
+
+  test("signup update ignores Stripe errors when expiring session", async () => {
+    const { signup } = await defaultTestEventAndSignup();
+
+    // Create a PENDING payment
+    await api.startPayment(signup.id);
+
+    // Mock Stripe expire to fail with StripeInvalidRequestError
+    mockStripeCheckoutSessionExpire.mockRejectedValueOnce(
+      new Stripe.errors.StripeInvalidRequestError({ type: "invalid_request_error" }),
+    );
+
+    // Update signup - should fail because payment couldn't be expired
+    const result = await api.updateSignupAsUser(signup.id, { namePublic: true });
+
+    // Should fail because the payment is still active
+    expect(result).toBeApiError(409, ErrorCode.PAYMENT_IN_PROGRESS);
+    expect(mockStripeCheckoutSessionExpire).toHaveBeenCalledOnce();
+    expect(mockStripeCheckoutSessionCreate).toHaveBeenCalledOnce(); // No new payment created
+  });
+
+  test("end-to-end: update to expire payment, then pay again", async () => {
+    const event = await testEvent(
+      {
+        quotaCount: 1,
+        questionCount: 1,
+        questionOverrides: { options: ["Option A", "Option B"], prices: [500, 1000] },
+      },
+      { payments: PaymentMode.ONLINE, nameQuestion: true, emailQuestion: true },
+    );
+    const [signup] = await testSignups(event, { count: 1, confirmed: true });
+
+    // Create initial payment
+    await api.startPayment(signup.id);
+    const payment = await Payment.findOne({ where: { signupId: signup.id } });
+    expect(payment).toBeTruthy();
+    expect(payment!.status).toBe(PaymentStatus.PENDING);
+
+    // Update signup - expires old payment
+    await api.updateSignupAsUser(signup.id, { namePublic: true, answers: [] });
+
+    // Verify old payment is expired
+    await payment!.reload();
+    expect(payment!.status).toBe(PaymentStatus.EXPIRED);
+    expect(mockStripeCheckoutSessionExpire).toHaveBeenCalledExactlyOnceWith(payment!.stripeCheckoutSessionId!);
+
+    // Create new payment - should succeed
+    const [data, response] = await api.startPayment(signup.id);
+    expect(response.statusCode).toBe(200);
+    expect(data.paymentUrl).toEqual(expect.stringContaining("https://checkout.stripe.test/pay/"));
+
+    // Verify new payment was created
+    const newPayment = await signup.getActivePayment();
+    expect(newPayment).toBeTruthy();
+    expect(newPayment!.id).not.toBe(payment!.id);
+    expect(newPayment!.status).toBe(PaymentStatus.PENDING);
+    expect(mockStripeCheckoutSessionCreate).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("completePayment", () => {
+  test.todo("refreshes PENDING payment and returns signup when complete", async () => {
+    // TODO: Test that completePayment with a PENDING payment checks Stripe,
+    // marks it as PAID if complete, and returns the signup data
+  });
+
+  test.todo("throws PaymentNotComplete when PENDING payment is not complete", async () => {
+    // TODO: Test that completePayment with a PENDING payment that is still open
+    // throws PaymentNotComplete
+  });
+
+  test.todo("handles PENDING payment that expired in Stripe", async () => {
+    // TODO: Test that completePayment with a PENDING payment that is expired in Stripe
+    // marks it as EXPIRED and throws PaymentNotComplete
+  });
+
+  test.todo("returns signup immediately when payment is already PAID", async () => {
+    // TODO: Test that completePayment with a PAID payment returns the signup
+    // without calling Stripe again
+  });
+
+  test.todo("throws PaymentNotFound when no active payment exists", async () => {
+    // TODO: Test that completePayment without an active payment throws PaymentNotFound
+  });
+
+  test.todo("handles races between webhook and return URL", async () => {
+    // TODO: Test that when webhook and return URL both try to update payment status,
+    // only one succeeds and the other is a no-op
+  });
+
+  test.todo("handles rate limit errors from Stripe", async () => {
+    // TODO: Test that completePayment handles rate limit errors when refreshing
+    // the checkout session
+  });
+});
+
+describe("Stripe webhook", () => {
+  test.todo("handles checkout.session.completed event", async () => {
+    // TODO: Test that webhook processes checkout.session.completed and updates
+    // payment to PAID status
+  });
+
+  test.todo("handles checkout.session.expired event", async () => {
+    // TODO: Test that webhook processes checkout.session.expired and updates
+    // payment to EXPIRED status
+  });
+
+  test.todo("ignores unknown event types", async () => {
+    // TODO: Test that webhook ignores unknown event types and returns 200
+  });
+
+  test.todo("rejects webhook with missing signature", async () => {
+    // TODO: Test that webhook rejects requests without stripe-signature header
+  });
+
+  test.todo("rejects webhook with invalid signature", async () => {
+    // TODO: Test that webhook rejects requests with invalid signature
+  });
+
+  test.todo("handles duplicate webhooks idempotently", async () => {
+    // TODO: Test that processing the same webhook multiple times (e.g., completed event)
+    // only transitions the payment once and subsequent calls are no-ops
+  });
+
+  test.todo("ignores webhook when payment already paid", async () => {
+    // TODO: Test that expired webhook is ignored when payment is already PAID
+  });
+});
+
+describe("database constraints and triggers", () => {
+  test.todo("enforces unique active payment constraint", async () => {
+    // TODO: Test that creating two PENDING payments for the same signup fails
+    // with unique constraint violation
+  });
+
+  test.todo("enforces session ID consistency constraint", async () => {
+    // TODO: Test that PENDING/PAID/EXPIRED/REFUNDED payments require stripeCheckoutSessionId
+    // and CREATING/CREATION_FAILED payments must have NULL session ID
+  });
+
+  test.todo("enforces valid state transitions", async () => {
+    // TODO: Test that invalid state transitions (e.g., EXPIRED -> PENDING) are rejected
+  });
+
+  test.todo("enforces valid terminal state transitions", async () => {
+    // TODO: Test that terminal states (EXPIRED, CREATION_FAILED, REFUNDED) cannot transition
+  });
+
+  test.todo("prevents updates to immutable fields", async () => {
+    // TODO: Test that updating amount, currency, products, expiresAt, etc. is rejected
+  });
+
+  test.todo("prevents changing stripeCheckoutSessionId once set", async () => {
+    // TODO: Test that updating stripeCheckoutSessionId from non-null to different value fails
+  });
+
+  test.todo("prevents DELETE operations", async () => {
+    // TODO: Test that DELETE operations on Payment table are blocked by trigger
+  });
+});
+
+describe("expirePaymentForSignupUpdate", () => {
+  test("handles PENDING payment", async () => {
+    const { signup } = await defaultTestEventAndSignup();
+
+    // Create a PENDING payment
+    const session = await getStripe().checkout.sessions.create();
+    const payment = await createMockPayment(signup, PaymentStatus.PENDING, session);
+
+    // Call the utility function
+    await expirePaymentForSignupUpdate(payment);
+
+    // Verify Stripe was called and payment was updated
+    expect(mockStripeCheckoutSessionExpire).toHaveBeenCalledWith(session.id);
+    await payment.reload();
+    expect(payment.status).toBe(PaymentStatus.EXPIRED);
+  });
+
+  test("handles CREATING payment", async () => {
+    const { signup } = await defaultTestEventAndSignup();
+
+    // Create a CREATING payment
+    const payment = await createMockPayment(signup, PaymentStatus.CREATING);
+
+    // Call the utility function
+    await expirePaymentForSignupUpdate(payment);
+
+    // Verify payment was marked as CREATION_FAILED
+    await payment.reload();
+    expect(payment.status).toBe(PaymentStatus.CREATION_FAILED);
+  });
+
+  test("does nothing for PAID payment", async () => {
+    const { signup } = await defaultTestEventAndSignup();
+
+    // Create a PAID payment
+    const session = await getStripe().checkout.sessions.create();
+    const payment = await createMockPayment(signup, PaymentStatus.PAID, session);
+
+    // Call the utility function - should not throw
+    await expirePaymentForSignupUpdate(payment);
+
+    // Verify status unchanged
+    await payment.reload();
+    expect(payment.status).toBe(PaymentStatus.PAID);
+  });
+});
+
+describe("checkoutSessionStatusUpdated", () => {
+  test.todo("transitions PENDING to PAID on complete status", async () => {
+    // TODO: Test that checkoutSessionStatusUpdated with "complete" status
+    // updates payment to PAID and sets completedAt
+  });
+
+  test.todo("transitions PENDING to EXPIRED on expired status", async () => {
+    // TODO: Test that checkoutSessionStatusUpdated with "expired" status
+    // updates payment to EXPIRED
+  });
+
+  test.todo("does nothing for open status", async () => {
+    // TODO: Test that checkoutSessionStatusUpdated with "open" status
+    // leaves payment unchanged
+  });
+
+  test.todo("is idempotent when payment already transitioned", async () => {
+    // TODO: Test that calling checkoutSessionStatusUpdated multiple times
+    // for the same session only performs side effects once (0 rows updated on subsequent calls)
+  });
+});
+
+describe("pollPendingPayments", () => {
+  test.todo("polls stale PENDING payments", async () => {
+    // TODO: Test background job that finds PENDING payments past expiresAt,
+    // queries Stripe, and updates status accordingly
+  });
+});
+
+describe("cleanupStaleCreatingPayments", () => {
+  test.todo("cleans up stale CREATING payments", async () => {
+    // TODO: Test background job that marks old CREATING payments as CREATION_FAILED
+  });
+});

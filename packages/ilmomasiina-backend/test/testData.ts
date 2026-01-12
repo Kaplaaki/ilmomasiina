@@ -105,7 +105,8 @@ export function testQuestionOptions() {
 }
 
 export function testQuestionPrices(optionCount: number) {
-  return range(optionCount).map(() => faker.number.int({ min: 0, max: 10000 }));
+  // Disallow zero so that there is no chance of all-zero prices. Zero will be tested manually.
+  return range(optionCount).map(() => faker.number.int({ min: 1, max: 10000 }));
 }
 
 export function testQuestionAttributes() {
@@ -126,7 +127,7 @@ export function testQuotaAttributes() {
   return {
     title: faker.lorem.words({ min: 1, max: 5 }),
     size: faker.helpers.maybe(() => faker.number.int({ min: 1, max: 50 }), { probability: 0.9 }) ?? null,
-    price: faker.number.int({ min: 0, max: 100000 }),
+    price: faker.number.int({ min: 1, max: 100000 }),
   };
 }
 
