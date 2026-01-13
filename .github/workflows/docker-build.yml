@@ -135,5 +135,58 @@ jobs:
       # NPM OIDC auth
       id-token: write
     if: github.repository == 'Tietokilta/ilmomasiina' && github.ref_type == 'tag'
-    uses: ./.github/workflows/npm-build.yml
-    secrets: inherit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js for NPM
+        uses: actions/setup-node@v4
+        with:
+          registry-url: "https://registry.npmjs.org"
+          node-version-file: ".nvmrc"
+          cache: "pnpm"
+
+      - # Necessary for OIDC auth
+        name: Update npm to latest
+        run: npm install -g npm@^11
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build packages
+        run: |
+          pnpm run --filter @tietokilta/ilmomasiina-models build
+          pnpm run --filter @tietokilta/ilmomasiina-client build
+
+      - name: Determine NPM tag
+        id: npm-tag
+        run: |
+          VERSION="${{ github.ref_name }}"
+          if [[ $VERSION == *-beta* ]] || [[ $VERSION == *-rc* ]]; then
+            echo "tag=next" >> $GITHUB_OUTPUT
+          elif [[ $VERSION == *-* ]]; then
+            echo "tag=dev" >> $GITHUB_OUTPUT
+          else
+            echo "tag=latest" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Publish to NPM
+        run: |
+          pnpm publish --filter @tietokilta/ilmomasiina-models --no-git-checks --access public --tag ${{ steps.npm-tag.outputs.tag }}
+          pnpm publish --filter @tietokilta/ilmomasiina-client --no-git-checks --access public --tag ${{ steps.npm-tag.outputs.tag }}
+
+      - name: Setup Node.js for GitHub Packages
+        uses: actions/setup-node@v4
+        with:
+          registry-url: "https://npm.pkg.github.com"
+
+      - name: Publish to GitHub Packages
+        run: |
+          pnpm publish --filter @tietokilta/ilmomasiina-models --no-git-checks --access public --tag ${{ steps.npm-tag.outputs.tag }}
+          pnpm publish --filter @tietokilta/ilmomasiina-client --no-git-checks --access public --tag ${{ steps.npm-tag.outputs.tag }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
