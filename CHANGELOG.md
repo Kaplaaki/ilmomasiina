@@ -1,5 +1,31 @@
 # Changelog
 
+## 3.0.0-dev
+
+**TODO:**
+
+- The backend no longer allows saving questions with duplicate or ambiguous options (TODO)
+- Migration support for MySQL to PostgreSQL
+
+**Breaking changes:**
+
+- Removed support for MySQL databases; only PostgreSQL is supported from now on
+- Added payment support via Stripe
+  - Paid signups cannot be edited or deleted after payment (TODO: allow admins to still modify them)
+  - Custom frontends should be updated to support payments if enabled
+  - New error codes and locale strings related to payments
+- **ilmomasiina-models**: Removed database models (moved to `ilmomasiina-backend`).
+
+**Features:**
+
+- **ilmomasiina-client:** Added payment support to EditSignup
+
+**Bug fixes and improvements:**
+
+- Added lots of backend tests
+- Improved validation of signup answers
+- Enabled hot reloading of locale files in development mode
+
 ## 2.1.0-beta.3
 
 **Bug fixes and improvements:**

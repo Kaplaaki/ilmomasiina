@@ -16,13 +16,18 @@ both for [production](#production) and [development](#development).
 If you want to change any of the following, you'll need to modify the code slightly and
 build your own Docker image (if using Docker):
 
-- Hosting in a subfolder (instead of directly at `https://ilmo.your.domain/`)
-- Colors ([`packages/ilmomasiina-frontend/src/styles/_definitions.scss`](../packages/ilmomasiina-frontend/src/styles/_definitions.scss))
-- Header logo (`packages/ilmomasiina-frontend/src/assets/logo.svg`) (can also be disabled from `_definitions.scss`)
-- Favicon (`packages/ilmomasiina-frontend/public/*.png`)
-- Header title (build args or [`packages/ilmomasiina-frontend/src/branding.ts`](../packages/ilmomasiina-frontend/src/branding.ts))
-- Footer links (build args or [`packages/ilmomasiina-frontend/src/branding.ts`](../packages/ilmomasiina-frontend/src/branding.ts))
-- Translations (`packages/ilmomasiina-*/src/locales/*.json`)
+| What to customize | Where |
+|-|-|
+| Hosting in a subfolder instead of directly at `https://ilmo.your.domain/` | build args |
+| Colors | [`packages/ilmomasiina-frontend/src/styles/_definitions.scss`](../packages/ilmomasiina-frontend/src/styles/_definitions.scss) |
+| Header logo | `packages/ilmomasiina-frontend/src/assets/logo.svg` (can also be disabled from `_definitions.scss`) |
+| Favicon | `packages/ilmomasiina-frontend/public/*.png` |
+| Header title | build args or [`packages/ilmomasiina-frontend/src/branding.ts`](../packages/ilmomasiina-frontend/src/branding.ts) |
+| Footer links | build args or [`packages/ilmomasiina-frontend/src/branding.ts`](../packages/ilmomasiina-frontend/src/branding.ts) |
+| Translations | `packages/ilmomasiina-*/src/locales/*.json` |
+| Timezone | build args |
+| Default language | build args |
+| Payment currency | build args |
 
 You can of course make further UI changes, but that is not documented.
 
@@ -45,18 +50,20 @@ have free Actions time. The repository contains a workflow called
 variables to build and push an image for your organization.
 
 Simply [enable GitHub Actions](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/enabling-features-for-your-repository/managing-github-actions-settings-for-a-repository#managing-github-actions-permissions-for-your-repository)
-for your fork and modify the `env` block in `docker-build.yml` as instructed.
-You'll also need to change the repository name in `jobs.docker.if` to ensure the workflow runs -
-it's automatically disabled on forks to avoid unnecessary errors.
+for your fork and modify `docker-build.yml` as instructed in comments:
 
-With the current workflow setup, the following trigger an image build:
-- `prod` branch pushes tags `prod` and `latest`
-- `staging` branch pushes tag `staging`
-- tags starting with `v` push semver tags (`major.minor` and full version)
+- Update `env` block as necessary.
+- Change the repository names in `jobs.docker.if` to ensure the workflow runs;
+  it's automatically disabled on forks to avoid unnecessary errors.
+- Change other conditions in `on` and `jobs.docker.if` if you want to build on branch pushes
+  or a different tag pattern. The `docker` is otherwise set up for either approach.
 
 #### Local Docker build
 
 You can of course also build images locally.
+
+Variables in `.env.example` can be passed as build args, though don't include secrets there.
+Anything that *requires frontend rebuild* needs to be passed as a build arg and won't work as a normal env variable.
 
 ```
 docker build \
