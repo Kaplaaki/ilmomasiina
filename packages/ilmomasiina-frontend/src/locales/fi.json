@@ -305,6 +305,8 @@
     "editor.editSignup.action.save": "Tallenna",
     "editor.editSignup.error.NoSuchSignup.description": "Ilmoittautumista ei löytynyt. Se saattaa olla jo poistettu.",
     "editor.editSignup.error.default.description": "Ilmoittautumisen tallentaminen epäonnistui.",
-    "editor.editSignup.success": "Ilmoittautuminen tallennettu."
+    "editor.editSignup.success": "Ilmoittautuminen tallennettu.",
+    "editor.editSignup.priceChangeWarning": "Jos muutat jo maksetun ilmoittautumisen hintaa, mahdollinen lisämaksu tai hyvitys pitää hoitaa manuaalisesti.",
+    "editor.saveSignupError.PaymentInProgress.description": "Maksutapahtuma on käynnissä. Kokeile hetken kuluttua uudestaan."
   }
 }

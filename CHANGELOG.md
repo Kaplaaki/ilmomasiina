@@ -5,6 +5,7 @@
 **TODO:**
 
 - The backend no longer allows saving questions with duplicate or ambiguous options (TODO)
+- Event end date is now required (TODO)
 - Migration support for MySQL to PostgreSQL
 
 **Breaking changes:**

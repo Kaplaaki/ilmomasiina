@@ -214,7 +214,7 @@ export async function expirePaymentForSignupUpdate(payment: Payment): Promise<vo
  * Errors from concurrent state changes are ignored. This function is only best-effort; the actual
  * check for conflicting payments is done in updateExistingSignup() once a lock is held.
  */
-export async function expireExistingPaymentsForSignupUpdate(signupId: string): Promise<void> {
+export async function expireExistingPaymentsForSignupUpdate(signupId: string, ignorePaid = false): Promise<void> {
   // Find any active payments
   const activePayments = await Payment.scope("active").findAll({
     where: { signupId },
@@ -225,8 +225,8 @@ export async function expireExistingPaymentsForSignupUpdate(signupId: string): P
     activePayments.map(async (payment) => {
       await expirePaymentForSignupUpdate(payment);
 
-      if (payment.status === PaymentStatus.PAID) {
-        // This would definitely fail later.
+      if (payment.status === PaymentStatus.PAID && !ignorePaid) {
+        // This would definitely fail later, except for admins with ignorePaid=true.
         // TODO: Allow cancelling after payment with manual refunds.
         throw new SignupAlreadyPaid("This signup has already been paid");
       }
@@ -238,16 +238,19 @@ export async function expireExistingPaymentsForSignupUpdate(signupId: string): P
 export async function checkForConflictingPaymentsForSignupUpdate(
   signup: Signup,
   transaction: Transaction,
+  ignorePaid = false,
 ): Promise<void> {
   const conflictingPayment = await signup.getActivePayment({ transaction });
   // Since we hold the lock on the signup and startPayment() also attempts to do so,
   // we know there are no uncommitted payments about to be created that this couldn't see.
 
   if (conflictingPayment?.status === PaymentStatus.PAID) {
-    // TODO: Allow cancelling after payment with manual refunds.
-    throw new SignupAlreadyPaid("This signup has already been paid");
-  }
-  if (conflictingPayment) {
+    // Admins can edit paid signups with ignorePaid=true.
+    if (!ignorePaid) {
+      // TODO: Allow cancelling after payment with manual refunds.
+      throw new SignupAlreadyPaid("This signup has already been paid");
+    }
+  } else if (conflictingPayment) {
     throw new PaymentInProgress("Active payment exists for this signup");
   }
 }

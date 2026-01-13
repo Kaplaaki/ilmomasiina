@@ -290,9 +290,6 @@ async function updateExistingSignup(
   answerProducts: ProductSchema[],
   transaction: Transaction,
 ) {
-  // Ensure there are no payments that could be paid with stale data.
-  await checkForConflictingPaymentsForSignupUpdate(signup, transaction);
-
   // Get possible product line for the quota
   const quotaProducts = getQuotaProducts(signup.quota!);
   const products = [...quotaProducts, ...answerProducts];
@@ -359,8 +356,13 @@ export async function updateSignupAsUser(
       throw new SignupValidationError("Errors validating signup", errors);
     }
 
+    // Ensure there are no payments that could be paid with stale data,
+    // nor any paid payments (since the expected paid amount might change).
+    await checkForConflictingPaymentsForSignupUpdate(signup, transaction);
+
     await updateExistingSignup(signup, fields, newAnswers, answerProducts, transaction);
     await request.logEvent(AuditEvent.EDIT_SIGNUP, { signup, event, transaction });
+
     return {
       updatedSignup: signup,
       updatedAnswers: newAnswers,
@@ -368,11 +370,11 @@ export async function updateSignupAsUser(
     };
   });
 
-  // Send the confirmation email.
-  await sendSignupConfirmationMail(updatedSignup, edited ? "edit" : "signup", false);
-
   // Fetch updated payment data for response.
   updatedSignup.activePayment = await updatedSignup.getActivePayment();
+
+  // Send the confirmation email.
+  await sendSignupConfirmationMail(updatedSignup, edited ? "edit" : "signup", false);
 
   const response = {
     ...updatedSignup.get({ plain: true }),
@@ -405,6 +407,10 @@ async function updateExistingSignupAsAdmin(
   // Ignore all other validation.
   const { newAnswers, answerProducts } = validateAnswersAndGetProducts(event, body.answers, true);
 
+  // Ensure there are no payments that could be paid with stale data.
+  // Paid payments are allowed to exist; admins are expected to deal with this.
+  await checkForConflictingPaymentsForSignupUpdate(signup, transaction, true);
+
   await updateExistingSignup(signup, fields, newAnswers, answerProducts, transaction);
 }
 
@@ -413,7 +419,7 @@ export async function updateSignupAsAdmin(
   reply: FastifyReply,
 ): Promise<AdminSignupSchema> {
   // First, attempt to expire any existing payments for this signup.
-  await expireExistingPaymentsForSignupUpdate(request.params.id);
+  await expireExistingPaymentsForSignupUpdate(request.params.id, true);
 
   const updatedSignup = await getSequelize().transaction(async (transaction) => {
     const { signup, event } = await getSignupAndEventForUpdate(request.params.id, transaction);
@@ -421,6 +427,9 @@ export async function updateSignupAsAdmin(
     await request.logEvent(AuditEvent.EDIT_SIGNUP, { signup, event, transaction });
     return signup;
   });
+
+  // Fetch updated payment data for response.
+  updatedSignup.activePayment = await updatedSignup.getActivePayment();
 
   // For clarity, always title the email "edit confirmation", even if the signup hadn't been confirmed yet.
   if (request.body.sendEmail ?? true) await sendSignupConfirmationMail(updatedSignup, "edit", true);

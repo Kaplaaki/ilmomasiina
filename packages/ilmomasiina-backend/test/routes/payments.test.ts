@@ -364,12 +364,28 @@ describe("payment and signup update locking", () => {
     // Create a PENDING payment
     await api.startPayment(signup.id);
     const payment = await Payment.findOne({ where: { signupId: signup.id } });
-    expect(payment).toBeTruthy();
-    expect(payment!.status).toBe(PaymentStatus.PENDING);
 
     // Update signup
-    const [, response] = await api.updateSignupAsUser(signup.id, { namePublic: true, answers: [] });
+    const [, response] = await api.updateSignupAsUser(signup.id, { firstName: "Changed!", answers: [] });
     expect(response.statusCode).toBe(200);
+
+    // Verify the payment was expired
+    await payment!.reload();
+    expect(payment!.status).toBe(PaymentStatus.EXPIRED);
+    expect(mockStripeCheckoutSessionExpire).toHaveBeenCalledExactlyOnceWith(payment!.stripeCheckoutSessionId!);
+  });
+
+  test("admin signup update expires existing PENDING payment", async () => {
+    const { signup } = await defaultTestEventAndSignup();
+
+    // Create a PENDING payment
+    await api.startPayment(signup.id);
+    const payment = await Payment.findOne({ where: { signupId: signup.id } });
+
+    // Admin update should succeed and expire the payment
+    const [data, response] = await api.updateSignupAsAdmin(signup.id, { firstName: "AdminChanged!" });
+    expect(response.statusCode).toBe(200);
+    expect(data.firstName).toBe("AdminChanged!");
 
     // Verify the payment was expired
     await payment!.reload();
@@ -383,11 +399,26 @@ describe("payment and signup update locking", () => {
     // Create a PENDING payment
     await api.startPayment(signup.id);
     const payment = await Payment.findOne({ where: { signupId: signup.id } });
-    expect(payment).toBeTruthy();
-    expect(payment!.status).toBe(PaymentStatus.PENDING);
 
     // Delete signup
     const [, response] = await api.deleteSignupAsUser(signup.id);
+    expect(response.statusCode).toBe(204);
+
+    // Verify the payment was expired
+    await payment!.reload();
+    expect(payment!.status).toBe(PaymentStatus.EXPIRED);
+    expect(mockStripeCheckoutSessionExpire).toHaveBeenCalledExactlyOnceWith(payment!.stripeCheckoutSessionId!);
+  });
+
+  test("admin signup deletion expires existing PENDING payment", async () => {
+    const { signup } = await defaultTestEventAndSignup();
+
+    // Create a PENDING payment
+    await api.startPayment(signup.id);
+    const payment = await Payment.findOne({ where: { signupId: signup.id } });
+
+    // Admin delete signup
+    const [, response] = await api.deleteSignupAsAdmin(signup.id);
     expect(response.statusCode).toBe(204);
 
     // Verify the payment was expired
@@ -414,14 +445,40 @@ describe("payment and signup update locking", () => {
     expect(signup.firstName).not.toBe("Changed!");
   });
 
+  test("admin signup update succeeds when PAID payment exists", async () => {
+    const { signup } = await defaultTestEventAndSignup();
+
+    // Create a payment
+    await api.startPayment(signup.id);
+    const payment = await Payment.findOne({ where: { signupId: signup.id } });
+    // Mark payment as PAID via webhook simulation
+    await checkoutSessionStatusUpdated(payment!.stripeCheckoutSessionId!, "complete");
+
+    // Verify user update is blocked
+    const userResult = await api.updateSignupAsUser(signup.id, { firstName: "UserChanged!", answers: [] });
+    expect(userResult).toBeApiError(400, ErrorCode.SIGNUP_ALREADY_PAID);
+
+    // Admin update should succeed
+    const [data, response] = await api.updateSignupAsAdmin(signup.id, { firstName: "AdminChanged!" });
+    expect(response.statusCode).toBe(200);
+    expect(data.firstName).toBe("AdminChanged!");
+    expect(data.paymentStatus).toBe(SignupPaymentStatus.PAID);
+
+    // Verify signup was changed
+    await signup.reload();
+    expect(signup.firstName).toBe("AdminChanged!");
+
+    // Payment status should remain PAID
+    await payment!.reload();
+    expect(payment!.status).toBe(PaymentStatus.PAID);
+  });
+
   test("signup deletion blocked when PAID payment exists", async () => {
     const { signup } = await defaultTestEventAndSignup();
 
     // Create a payment
     await api.startPayment(signup.id);
     const payment = await Payment.findOne({ where: { signupId: signup.id } });
-    expect(payment).toBeTruthy();
-    expect(payment!.status).toBe(PaymentStatus.PENDING);
 
     // Mark payment as PAID via webhook simulation
     await checkoutSessionStatusUpdated(payment!.stripeCheckoutSessionId!, "complete");
@@ -430,6 +487,26 @@ describe("payment and signup update locking", () => {
 
     // Attempt to delete signup - should fail
     const result = await api.deleteSignupAsUser(signup.id);
+    expect(result).toBeApiError(400, ErrorCode.SIGNUP_ALREADY_PAID);
+
+    // Will fail if deleted or soft deleted
+    await signup.reload();
+  });
+
+  test("admin signup deletion blocked when PAID payment exists", async () => {
+    const { signup } = await defaultTestEventAndSignup();
+
+    // Create a payment
+    await api.startPayment(signup.id);
+    const payment = await Payment.findOne({ where: { signupId: signup.id } });
+
+    // Mark payment as PAID via webhook simulation
+    await checkoutSessionStatusUpdated(payment!.stripeCheckoutSessionId!, "complete");
+    await payment!.reload();
+    expect(payment!.status).toBe(PaymentStatus.PAID);
+
+    // Attempt to delete signup - should fail
+    const result = await api.deleteSignupAsAdmin(signup.id);
     expect(result).toBeApiError(400, ErrorCode.SIGNUP_ALREADY_PAID);
 
     // Will fail if deleted or soft deleted

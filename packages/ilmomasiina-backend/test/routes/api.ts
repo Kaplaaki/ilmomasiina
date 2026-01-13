@@ -3,6 +3,8 @@ import { FastifyInstance } from "fastify/types/instance";
 import {
   AdminEventListResponse,
   AdminEventResponse,
+  AdminSignupSchema,
+  AdminSignupUpdateBody,
   EDIT_TOKEN_HEADER,
   EventCreateBody,
   EventListQuery,
@@ -139,4 +141,23 @@ export async function deleteEvent(event: Pick<Event, "id">) {
     headers: { authorization: adminToken },
   });
   return [null, response] as const;
+}
+
+export async function updateSignupAsAdmin(signupId: string, body: AdminSignupUpdateBody) {
+  const response = await server.inject({
+    method: "PATCH",
+    url: `/api/admin/signups/${signupId}`,
+    headers: { authorization: adminToken },
+    payload: body,
+  });
+  return handleTestResponse<AdminSignupSchema>(response);
+}
+
+export async function deleteSignupAsAdmin(signupId: string) {
+  const response = await server.inject({
+    method: "DELETE",
+    url: `/api/admin/signups/${signupId}`,
+    headers: { authorization: adminToken },
+  });
+  return handleTestResponse<null>(response);
 }
