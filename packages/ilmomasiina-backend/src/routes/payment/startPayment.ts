@@ -40,7 +40,7 @@ async function createPayment(signupId: SignupID): Promise<string> {
     [payment, signup] = await getSequelize().transaction(async (transaction) => {
       // Re-fetch signup with FOR UPDATE lock
       // This waits if a signup update is in progress (holding the lock)
-      const freshSignup = await Signup.findByPk(signupId, {
+      const freshSignup = await Signup.scope("active").findByPk(signupId, {
         transaction,
         lock: Transaction.LOCK.UPDATE,
       });
@@ -150,7 +150,7 @@ async function getOrCreatePayment(signupId: string): Promise<string> {
       },
     ],
   });
-  if (!signup) {
+  if (!signup || !signup.quota || !signup.quota.event) {
     throw new NoSuchSignup("Signup not found");
   }
 
@@ -161,7 +161,7 @@ async function getOrCreatePayment(signupId: string): Promise<string> {
   if (!signup.hasPrice) {
     throw new PaymentNotRequired("This signup does not require payment");
   }
-  if (signup.quota!.event!.payments !== PaymentMode.ONLINE) {
+  if (signup.quota.event.payments !== PaymentMode.ONLINE) {
     throw new OnlinePaymentsDisabled("Online payments are not enabled for this event");
   }
 

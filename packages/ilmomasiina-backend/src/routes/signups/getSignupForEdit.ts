@@ -33,12 +33,12 @@ export default async function getSignupForEdit(
       },
     ],
   });
-  if (signup === null) {
+  if (!signup || !signup.quota || !signup.quota.event) {
     // Event not found with id, probably deleted
-    throw new NoSuchSignup("No signup found with given id");
+    throw new NoSuchSignup("Signup expired or already deleted");
   }
 
-  const event = signup.quota!.event!;
+  const { event } = signup.quota;
 
   // Fetch these separately to avoid O(n^3) returned rows.
   event.questions = await Question.findAll({ where: { eventId: event.id }, order: [["order", "ASC"]] });

@@ -39,6 +39,10 @@ async function deleteSignup(id: string, auditLogger: AuditLogger, admin: boolean
       ],
       transaction,
     });
+    if (!signup.quota || !signup.quota.event) {
+      // Quota or event soft deleted
+      throw new NoSuchSignup("Signup expired or already deleted");
+    }
 
     if (!admin && !signupEditable(signup.quota!.event!, signup)) {
       throw new SignupsClosed("Signups closed for this event.");
