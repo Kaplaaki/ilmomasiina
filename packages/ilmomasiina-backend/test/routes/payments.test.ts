@@ -466,7 +466,6 @@ describe("payment and signup update locking", () => {
 
     // Pretend Stripe create responded - the creation should now fail due to CREATION_FAILED state
     stripeMockResponse.resolve();
-    stripeMockResponse.resolve();
 
     const result = await startPaymentPromise;
     expect(result).toBeApiError(409, ErrorCode.PAYMENT_IN_PROGRESS);
