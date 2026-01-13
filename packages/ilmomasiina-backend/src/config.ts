@@ -60,8 +60,8 @@ const config = {
 
   /** ClearDB connection string. */
   clearDbUrl: envString("CLEARDB_DATABASE_URL", null),
-  /** `mysql` and `postgres` are supported. */
-  dbDialect: envString("DB_DIALECT", null),
+  /** @deprecated Only used to detect outdated configs. */
+  dbDialect: envString("DB_DIALECT", "postgres"),
   /** Hostname for the database. */
   dbHost: envString("DB_HOST", null),
   /** Port for the database. */

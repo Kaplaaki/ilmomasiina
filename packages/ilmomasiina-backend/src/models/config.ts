@@ -2,7 +2,7 @@ import { Dialect, Options, Sequelize } from "sequelize";
 
 import appConfig from "../config";
 
-const { clearDbUrl, dbDialect, dbHost, dbPort, dbSsl, dbDatabase, dbUser, dbPassword, debugDbLogging } = appConfig;
+const { clearDbUrl, dbHost, dbPort, dbSsl, dbDatabase, dbUser, dbPassword, debugDbLogging } = appConfig;
 
 let auth: Options;
 
@@ -19,10 +19,10 @@ if (clearDbUrl) {
     password: password ?? undefined,
     dialectOptions,
   };
-} else if (dbDialect) {
+} else if (dbHost) {
   auth = {
-    dialect: dbDialect as Dialect,
-    host: dbHost!,
+    dialect: "postgres",
+    host: dbHost,
     port: dbPort ?? undefined,
     database: dbDatabase!,
     username: dbUser!,
