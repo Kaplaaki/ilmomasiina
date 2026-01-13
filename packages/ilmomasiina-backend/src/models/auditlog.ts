@@ -36,7 +36,7 @@ export default function setupAuditLogModel(sequelize: Sequelize) {
   AuditLog.init(
     {
       id: {
-        type: DataTypes.INTEGER.UNSIGNED,
+        type: DataTypes.INTEGER,
         autoIncrement: true,
         primaryKey: true,
       },

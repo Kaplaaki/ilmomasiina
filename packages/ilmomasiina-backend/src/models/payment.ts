@@ -39,7 +39,7 @@ export default function setupPaymentModel(sequelize: Sequelize) {
   Payment.init(
     {
       id: {
-        type: DataTypes.INTEGER.UNSIGNED,
+        type: DataTypes.INTEGER,
         autoIncrement: true,
         allowNull: false,
         primaryKey: true,

@@ -46,7 +46,7 @@ export default function setupAnswerModel(sequelize: Sequelize) {
   Answer.init(
     {
       id: {
-        type: DataTypes.INTEGER.UNSIGNED,
+        type: DataTypes.INTEGER,
         autoIncrement: true,
         primaryKey: true,
       },
