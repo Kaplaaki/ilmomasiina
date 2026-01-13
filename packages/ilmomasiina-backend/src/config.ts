@@ -1,8 +1,9 @@
 import dotenvFlow from "dotenv-flow";
 import path from "path";
 
+import { stripeBrandingSchema } from "./configSchemas";
 import i18n, { i18nResources, knownLanguages } from "./i18n";
-import { envBoolean, envEnum, envInteger, envString, frontendFilesPath } from "./util/config";
+import { envBoolean, envEnum, envInteger, envJson, envString, frontendFilesPath } from "./util/config";
 
 // Vite/Vitest sets BASE_URL. This conflicts with our config, but isn't used
 // in tests, so just overwrite it.
@@ -173,6 +174,8 @@ const config = {
   stripeWebhookSecret: envString("STRIPE_WEBHOOK_SECRET", null),
   /** How long (in minutes) before a Stripe Checkout Session expires. Default: 30 minutes. */
   stripeCheckoutExpiryMins: envInteger("STRIPE_CHECKOUT_EXPIRY_MINS", 30),
+  /** Stripe branding customization. */
+  stripeBranding: envJson("STRIPE_BRANDING_JSON", stripeBrandingSchema, {}),
 } as const;
 
 if (!process.env.PORT && config.nodeEnv === "production") {

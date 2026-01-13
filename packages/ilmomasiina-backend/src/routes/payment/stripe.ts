@@ -57,6 +57,7 @@ export async function createCheckoutSession(signup: Signup, payment: Payment): P
       success_url: returnUrl,
       cancel_url: returnUrl,
       expires_at: moment(payment.expiresAt).unix(),
+      branding_settings: config.stripeBranding,
       metadata: {
         signupId: payment.signupId,
         paymentId: String(payment.id),

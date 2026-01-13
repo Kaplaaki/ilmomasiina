@@ -166,6 +166,9 @@ importers:
       validator:
         specifier: ^13.15.26
         version: 13.15.26
+      zod:
+        specifier: ^4.3.5
+        version: 4.3.5
     devDependencies:
       '@faker-js/faker':
         specifier: ^10.2.0
