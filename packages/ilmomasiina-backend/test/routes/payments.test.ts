@@ -4,7 +4,7 @@ import Stripe from "stripe";
 import { testEvent, testSignups } from "test/testData";
 import { beforeAll, beforeEach, describe, expect, Mock, test, vi } from "vitest";
 
-import { ErrorCode, PaymentMode, PaymentStatus } from "@tietokilta/ilmomasiina-models";
+import { ErrorCode, PaymentMode, PaymentStatus, SignupPaymentStatus } from "@tietokilta/ilmomasiina-models";
 import { Payment } from "../../src/models/payment";
 import { Signup } from "../../src/models/signup";
 import { checkoutSessionStatusUpdated, expirePaymentForSignupUpdate, getStripe } from "../../src/routes/payment/stripe";
@@ -81,7 +81,7 @@ async function defaultTestEventAndSignup() {
     { quotaCount: 1, questionCount: 0 },
     { payments: PaymentMode.ONLINE, nameQuestion: true, emailQuestion: true },
   );
-  const [signup] = await testSignups(event, { count: 1, confirmed: true });
+  const [signup] = await testSignups(event, { count: 1, confirmed: true }, { language: "en" });
   return { event, signup };
 }
 
@@ -420,8 +420,13 @@ describe("payment and signup update locking", () => {
     // Create a payment
     await api.startPayment(signup.id);
     const payment = await Payment.findOne({ where: { signupId: signup.id } });
+    expect(payment).toBeTruthy();
+    expect(payment!.status).toBe(PaymentStatus.PENDING);
+
     // Mark payment as PAID via webhook simulation
     await checkoutSessionStatusUpdated(payment!.stripeCheckoutSessionId!, "complete");
+    await payment!.reload();
+    expect(payment!.status).toBe(PaymentStatus.PAID);
 
     // Attempt to delete signup - should fail
     const result = await api.deleteSignupAsUser(signup.id);
@@ -565,38 +570,164 @@ describe("payment and signup update locking", () => {
 });
 
 describe("completePayment", () => {
-  test.todo("refreshes PENDING payment and returns signup when complete", async () => {
-    // TODO: Test that completePayment with a PENDING payment checks Stripe,
-    // marks it as PAID if complete, and returns the signup data
+  test("refreshes PENDING payment and returns signup when complete", async () => {
+    const { event, signup } = await defaultTestEventAndSignup();
+
+    // Create a PENDING payment
+    await api.startPayment(signup.id);
+    const payment = await Payment.findOne({ where: { signupId: signup.id } });
+
+    // Mark the session as complete in Stripe
+    const session = mockCheckoutSessions.get(payment!.stripeCheckoutSessionId!);
+    session!.status = "complete";
+
+    // Complete the payment
+    const [data, response] = await api.completePayment(signup.id);
+    expect(response.statusCode).toBe(200);
+    expect(data).toEqual({
+      event: expect.any(Object),
+      signup: {
+        id: signup.id,
+        firstName: signup.firstName,
+        lastName: signup.lastName,
+        email: signup.email,
+        namePublic: signup.namePublic,
+        answers: expect.any(Array),
+        confirmed: true,
+        createdAt: signup.createdAt.toISOString(),
+        quota: expect.any(Object),
+        position: null,
+        status: null,
+        confirmableForMillis: 0,
+        editableForMillis: expect.any(Number),
+        price: payment!.amount, // important
+        currency: payment!.currency, // important
+        products: payment!.products, // important
+        paymentStatus: SignupPaymentStatus.PAID, // important
+      },
+    });
+
+    // Verify payment was marked as PAID
+    await payment!.reload();
+    expect(payment!.status).toBe(PaymentStatus.PAID);
+    expect(payment!.completedAt).toBeTruthy();
+    expect(mockStripeCheckoutSessionRetrieve).toHaveBeenCalledWith(payment!.stripeCheckoutSessionId!);
+
+    // Verify an email was sent
+    expect(emailSend).toHaveBeenCalledExactlyOnceWith(
+      signup.email,
+      `Payment confirmation: ${event.title}`,
+      expect.stringContaining("has been received"),
+    );
   });
 
-  test.todo("throws PaymentNotComplete when PENDING payment is not complete", async () => {
-    // TODO: Test that completePayment with a PENDING payment that is still open
-    // throws PaymentNotComplete
+  test("throws PaymentNotComplete when PENDING payment is not complete", async () => {
+    const { signup } = await defaultTestEventAndSignup();
+
+    // Create a PENDING payment
+    await api.startPayment(signup.id);
+
+    // Attempt to complete the payment - should fail
+    const result = await api.completePayment(signup.id);
+    expect(result).toBeApiError(400, ErrorCode.PAYMENT_NOT_COMPLETE);
+
+    // Verify payment status unchanged
+    const payment = await Payment.findOne({ where: { signupId: signup.id } });
+    expect(payment!.status).toBe(PaymentStatus.PENDING);
+
+    // Verify no email was sent
+    expect(emailSend).not.toHaveBeenCalled();
   });
 
-  test.todo("handles PENDING payment that expired in Stripe", async () => {
-    // TODO: Test that completePayment with a PENDING payment that is expired in Stripe
-    // marks it as EXPIRED and throws PaymentNotComplete
+  test("handles PENDING payment that expired in Stripe", async () => {
+    const { signup } = await defaultTestEventAndSignup();
+
+    // Create a PENDING payment
+    await api.startPayment(signup.id);
+    const payment = await Payment.findOne({ where: { signupId: signup.id } });
+
+    // Mark the session as expired in Stripe
+    const session = mockCheckoutSessions.get(payment!.stripeCheckoutSessionId!);
+    session!.status = "expired";
+
+    // Attempt to complete the payment - should fail
+    const result = await api.completePayment(signup.id);
+    expect(result).toBeApiError(400, ErrorCode.PAYMENT_NOT_COMPLETE);
+
+    // Verify payment was marked as EXPIRED
+    await payment!.reload();
+    expect(payment!.status).toBe(PaymentStatus.EXPIRED);
+
+    // Verify no email was sent
+    expect(emailSend).not.toHaveBeenCalled();
   });
 
-  test.todo("returns signup immediately when payment is already PAID", async () => {
-    // TODO: Test that completePayment with a PAID payment returns the signup
-    // without calling Stripe again
+  test("throws PaymentNotFound when no active payment exists", async () => {
+    const { signup } = await defaultTestEventAndSignup();
+
+    // Attempt to complete payment without creating one first
+    const result = await api.completePayment(signup.id);
+    expect(result).toBeApiError(400, ErrorCode.PAYMENT_NOT_FOUND);
+
+    // Verify no email was sent
+    expect(emailSend).not.toHaveBeenCalled();
   });
 
-  test.todo("throws PaymentNotFound when no active payment exists", async () => {
-    // TODO: Test that completePayment without an active payment throws PaymentNotFound
+  test("handles payments already marked as PAID by webhook", async () => {
+    const { signup } = await defaultTestEventAndSignup();
+
+    // Create a PENDING payment
+    await api.startPayment(signup.id);
+    const payment = await Payment.findOne({ where: { signupId: signup.id } });
+
+    // Mark the session as complete in Stripe
+    const session = mockCheckoutSessions.get(payment!.stripeCheckoutSessionId!);
+    session!.status = "complete";
+
+    // Simulate webhook processing the payment first
+    await checkoutSessionStatusUpdated(payment!.stripeCheckoutSessionId!, "complete");
+    await payment!.reload();
+    expect(payment!.status).toBe(PaymentStatus.PAID);
+
+    // Verify an email was sent
+    expect(emailSend).toHaveBeenCalledOnce();
+
+    // Now the user returns and completePayment is called
+    // This should succeed and return the signup without errors
+    const [data, response] = await api.completePayment(signup.id);
+    expect(response.statusCode).toBe(200);
+    expect(data.signup.id).toBe(signup.id);
+
+    // Verify payment is still PAID
+    await payment!.reload();
+    expect(payment!.status).toBe(PaymentStatus.PAID);
+
+    // Verify exactly one email was sent
+    expect(emailSend).toHaveBeenCalledOnce();
   });
 
-  test.todo("handles races between webhook and return URL", async () => {
-    // TODO: Test that when webhook and return URL both try to update payment status,
-    // only one succeeds and the other is a no-op
-  });
+  test("handles rate limit errors from Stripe", async () => {
+    const { signup } = await defaultTestEventAndSignup();
 
-  test.todo("handles rate limit errors from Stripe", async () => {
-    // TODO: Test that completePayment handles rate limit errors when refreshing
-    // the checkout session
+    // Create a PENDING payment
+    await api.startPayment(signup.id);
+    const payment = await Payment.findOne({ where: { signupId: signup.id } });
+
+    // Mock Stripe API to fail with rate limit error
+    mockStripeCheckoutSessionRetrieve.mockRejectedValueOnce(
+      new Stripe.errors.StripeRateLimitError({ type: "rate_limit_error" }),
+    );
+
+    // Attempt to complete payment - should fail with 429
+    const result = await api.completePayment(signup.id, undefined, true);
+    expect(result).toBeApiError(429, ErrorCode.PAYMENT_RATE_LIMITED);
+
+    // Verify payment status unchanged
+    await payment!.reload();
+    expect(payment!.status).toBe(PaymentStatus.PENDING);
+
+    // Verify no email was sent
+    expect(emailSend).not.toHaveBeenCalled();
   });
 });
 

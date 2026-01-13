@@ -16,7 +16,7 @@ import type {
 } from "@tietokilta/ilmomasiina-models";
 import { AuditEvent, QuestionType, SignupFieldError } from "@tietokilta/ilmomasiina-models";
 import config from "../../config";
-import sendSignupConfirmationMail from "../../mail/signupConfirmation";
+import { sendSignupConfirmationMail } from "../../mail/signupConfirmation";
 import { getSequelize } from "../../models";
 import { Answer, AnswerCreationAttributes } from "../../models/answer";
 import { Event } from "../../models/event";
@@ -369,8 +369,7 @@ export async function updateSignupAsUser(
   });
 
   // Send the confirmation email.
-  // Intentionally not awaited, as we don't want to delay the response for an API call.
-  sendSignupConfirmationMail(updatedSignup, edited ? "edit" : "signup", false);
+  await sendSignupConfirmationMail(updatedSignup, edited ? "edit" : "signup", false);
 
   // Fetch updated payment data for response.
   updatedSignup.activePayment = await updatedSignup.getActivePayment();
@@ -424,7 +423,7 @@ export async function updateSignupAsAdmin(
   });
 
   // For clarity, always title the email "edit confirmation", even if the signup hadn't been confirmed yet.
-  if (request.body.sendEmail ?? true) sendSignupConfirmationMail(updatedSignup, "edit", true);
+  if (request.body.sendEmail ?? true) await sendSignupConfirmationMail(updatedSignup, "edit", true);
 
   reply.status(200);
   return formatSignupForAdmin(updatedSignup);
@@ -466,7 +465,7 @@ export async function createSignupAsAdmin(
   // gets a status on their signup before it being returned.
   await refreshSignupPositions(updatedSignup.quota!.event!).catch((error) => console.error(error));
 
-  if (request.body.sendEmail ?? true) sendSignupConfirmationMail(updatedSignup, "signup", true);
+  if (request.body.sendEmail ?? true) await sendSignupConfirmationMail(updatedSignup, "signup", true);
 
   reply.status(200);
   return formatSignupForAdmin(updatedSignup);

@@ -1,6 +1,6 @@
 import { FastifyInstance } from "fastify";
 import { Sequelize } from "sequelize";
-import { MockInstance } from "vitest";
+import { Mock } from "vitest";
 
 import EmailService from "../src/mail";
 import { User } from "../src/models/user";
@@ -9,7 +9,7 @@ import { User } from "../src/models/user";
 declare global {
   var server: FastifyInstance;
   var sequelize: Sequelize;
-  var emailSend: MockInstance<Parameters<(typeof EmailService)["send"]>, Promise<void>>;
+  var emailSend: Mock<EmailService["send"]>;
   var adminUser: User;
   var adminToken: string;
 }

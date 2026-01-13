@@ -85,6 +85,15 @@ export async function startPayment(signupId: string, editToken?: string | false,
   return handleTestResponse<{ paymentUrl: string }>(response, ignore500);
 }
 
+export async function completePayment(signupId: string, editToken?: string | false, ignore500 = false) {
+  const response = await server.inject({
+    method: "POST",
+    url: `/api/signups/${signupId}/payment/complete`,
+    headers: editTokenHeaders(signupId, editToken),
+  });
+  return handleTestResponse<SignupForEditResponse>(response, ignore500);
+}
+
 export async function fetchAdminEventList() {
   const response = await server.inject({
     method: "GET",

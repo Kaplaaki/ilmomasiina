@@ -5,6 +5,7 @@ import Stripe from "stripe";
 
 import { PaymentStatus } from "@tietokilta/ilmomasiina-models";
 import config, { completePaymentUrl } from "../../config";
+import { sendPaymentConfirmationMail } from "../../mail/signupConfirmation";
 import { Payment } from "../../models/payment";
 import { Signup } from "../../models/signup";
 import { generateToken } from "../signups/editTokens";
@@ -80,12 +81,16 @@ export async function checkoutSessionStatusUpdated(
     case "complete": {
       // Payment completed but we haven't processed the webhook yet.
       // Use WHERE to ensure we only perform side effects once.
-      const [changed] = await Payment.update(
+      const [changed, updatedPayments] = await Payment.update(
         { status: PaymentStatus.PAID, completedAt: new Date() },
-        { where: { stripeCheckoutSessionId: sessionId, status: PaymentStatus.PENDING } },
+        {
+          where: { stripeCheckoutSessionId: sessionId, status: PaymentStatus.PENDING },
+          returning: true,
+        },
       );
       if (changed) {
-        // TODO: Send email receipt, etc.
+        // Side effects: send confirmation email
+        await sendPaymentConfirmationMail(updatedPayments[0]);
       }
       break;
     }
@@ -98,7 +103,7 @@ export async function checkoutSessionStatusUpdated(
         { where: { stripeCheckoutSessionId: sessionId, status: PaymentStatus.PENDING } },
       );
       if (changed) {
-        // TODO: Expire signup, etc.
+        // TODO: Side effects: expire signup, etc?
       }
       break;
     }

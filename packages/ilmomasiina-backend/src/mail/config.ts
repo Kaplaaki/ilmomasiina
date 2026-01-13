@@ -7,7 +7,7 @@ import config from "../config";
 const mailTransporter: Transporter = (() => {
   if (process.env.NODE_ENV === "test") {
     return nodemailer.createTransport({
-      name: "test mail service",
+      name: "console fallback",
       version: "0",
       send(mail, callback) {
         // Ignore emails in test environment
@@ -51,7 +51,7 @@ const mailTransporter: Transporter = (() => {
 
   console.warn("Neither Mailgun nor SMTP is configured. Falling back to debug mail service.");
   return nodemailer.createTransport({
-    name: "debug mail service",
+    name: "console fallback",
     version: "0",
     send(mail, callback) {
       const { message } = mail;

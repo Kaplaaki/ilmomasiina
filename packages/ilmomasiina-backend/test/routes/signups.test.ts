@@ -1,15 +1,14 @@
 import { testEvent, testSignups } from "test/testData";
 import { describe, expect, test } from "vitest";
 
-import { SignupPaymentStatus } from "@tietokilta/ilmomasiina-models";
-import config from "../../src/config";
+import { PaymentMode, SignupPaymentStatus } from "@tietokilta/ilmomasiina-models";
 import { refreshSignupPositionsAndGet } from "../../src/routes/signups/computeSignupPosition";
 import { generateToken } from "../../src/routes/signups/editTokens";
 import * as api from "./api";
 
 describe("getSignupForEdit", () => {
   test("returns signup for editing", async () => {
-    const event = await testEvent();
+    const event = await testEvent({}, { payments: PaymentMode.ONLINE });
     const [signup] = await testSignups(event, { count: 1, confirmed: true });
     const quota = await signup.getQuota();
     const answers = await signup.getAnswers();
@@ -39,10 +38,10 @@ describe("getSignupForEdit", () => {
         status: null,
         confirmableForMillis: 0,
         editableForMillis: expect.any(Number),
-        price: expect.any(Number),
-        currency: config.currency,
-        products: expect.any(Array),
-        paymentStatus: expect.toBeOneOf([SignupPaymentStatus.PENDING, null]),
+        price: signup.price,
+        currency: signup.currency,
+        products: signup.products,
+        paymentStatus: SignupPaymentStatus.PENDING,
       },
     });
   });

@@ -1,6 +1,16 @@
-import { DataTypes, Model, Op, Optional, Sequelize } from "sequelize";
+import {
+  DataTypes,
+  HasOneCreateAssociationMixin,
+  HasOneGetAssociationMixin,
+  HasOneSetAssociationMixin,
+  Model,
+  Op,
+  Optional,
+  Sequelize,
+} from "sequelize";
 
 import { PaymentStatus, ProductSchema } from "@tietokilta/ilmomasiina-models";
+import { Signup } from "./signup";
 import { jsonColumnGetter } from "./util/json";
 
 export interface PaymentAttributes {
@@ -22,7 +32,6 @@ export interface PaymentCreateAttributes extends Optional<
 
 export class Payment extends Model<PaymentAttributes, PaymentCreateAttributes> implements PaymentAttributes {
   public id!: number;
-  public signupId!: string;
   public stripeCheckoutSessionId!: string | null;
   public status!: PaymentStatus;
   public amount!: number;
@@ -33,6 +42,12 @@ export class Payment extends Model<PaymentAttributes, PaymentCreateAttributes> i
   public readonly updatedAt!: Date;
   public expiresAt!: Date;
   public completedAt!: Date | null;
+
+  public signupId!: string;
+  public signup?: Signup | null;
+  public getSignup!: HasOneGetAssociationMixin<Signup>;
+  public setSignup!: HasOneSetAssociationMixin<Signup, Signup["id"]>;
+  public createSignup!: HasOneCreateAssociationMixin<Signup>;
 }
 
 export default function setupPaymentModel(sequelize: Sequelize) {
