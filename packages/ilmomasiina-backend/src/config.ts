@@ -58,22 +58,22 @@ const config = {
   /** Version number added as a header to responses. */
   version: envString("VERSION", null),
 
-  /** ClearDB connection string. */
+  /** @deprecated Only used to detect outdated configs. */
   clearDbUrl: envString("CLEARDB_DATABASE_URL", null),
   /** @deprecated Only used to detect outdated configs. */
   dbDialect: envString("DB_DIALECT", "postgres"),
   /** Hostname for the database. */
-  dbHost: envString("DB_HOST", null),
+  dbHost: envString("DB_HOST"),
   /** Port for the database. */
   dbPort: envInteger("DB_PORT", null),
   /** Whether to use SSL for the database. */
   dbSsl: envBoolean("DB_SSL", false),
   /** Username for the database. */
-  dbUser: envString("DB_USER", null),
+  dbUser: envString("DB_USER"),
   /** Password for the database. */
   dbPassword: envString("DB_PASSWORD", null),
   /** Database name. */
-  dbDatabase: envString("DB_DATABASE", null),
+  dbDatabase: envString("DB_DATABASE"),
   /** Required to run tests, as they reset the test database for every test. */
   allowTestsToResetDb: envBoolean("THIS_IS_A_TEST_DB_AND_CAN_BE_WIPED", false),
 
@@ -182,7 +182,7 @@ if (!process.env.PORT && config.nodeEnv === "production") {
   throw new Error("Env variable PORT must be set in production");
 }
 
-if (config.dbDialect !== "postgres") {
+if (config.clearDbUrl || config.dbDialect !== "postgres") {
   throw new Error(
     "Only PostgreSQL is supported by Ilmomasiina 3.0. MySQL migration tools will be provided in a future Ilmomasiina 2.x version.",
   );
