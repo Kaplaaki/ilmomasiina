@@ -58,9 +58,10 @@ const SignupRow = ({ position, signup, showQuota }: SignupProps) => {
       : null;
 
   const formatPrice = usePriceFormatter(signup.currency ?? CURRENCY);
+  const isDeleted = Boolean(signup.deletedAt);
 
   return (
-    <tr className={!signup.confirmed ? "ilmo--unconfirmed" : ""}>
+    <tr className={`${!signup.confirmed ? "ilmo--unconfirmed" : ""} ${isDeleted ? "ilmo--deleted" : ""}`}>
       <td key="position">{`${position}.`}</td>
       {signup.confirmed && event.nameQuestion && <td key="firstName">{signup.firstName}</td>}
       {signup.confirmed && event.nameQuestion && <td key="lastName">{signup.lastName}</td>}
@@ -90,12 +91,18 @@ const SignupRow = ({ position, signup, showQuota }: SignupProps) => {
         </td>
       )}
       <td key="actions">
-        <Button type="button" variant="primary" size="sm" onClick={onEdit}>
-          {t("editor.signups.action.edit")}
-        </Button>
-        <Button type="button" variant="danger" size="sm" onClick={onDelete} className="ms-1">
-          {t("editor.signups.action.delete")}
-        </Button>
+        {!isDeleted ? (
+          <>
+            <Button type="button" variant="primary" size="sm" onClick={onEdit}>
+              {t("editor.signups.action.edit")}
+            </Button>
+            <Button type="button" variant="danger" size="sm" onClick={onDelete} className="ms-1">
+              {t("editor.signups.action.delete")}
+            </Button>
+          </>
+        ) : (
+          <span>{t("editor.signups.deleted")}</span>
+        )}
       </td>
     </tr>
   );

@@ -70,6 +70,7 @@ export const adminEventGetSignupAttrs: (keyof SignupAttributes)[] = [
   "price",
   "currency",
   "manualPaymentStatus",
+  "deletedAt",
 ];
 
 /** Attributes included in results for Answer instances. */

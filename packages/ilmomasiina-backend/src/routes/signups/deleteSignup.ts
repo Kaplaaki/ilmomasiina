@@ -13,7 +13,7 @@ import { NoSuchSignup, SignupsClosed } from "./errors";
 
 /** Requires admin authentication OR editTokenVerification */
 async function deleteSignup(id: string, auditLogger: AuditLogger, admin: boolean = false): Promise<void> {
-  await expireExistingPaymentsForSignupUpdate(id);
+  await expireExistingPaymentsForSignupUpdate(id, admin);
 
   const event = await getSequelize().transaction(async (transaction) => {
     const signup = await Signup.scope("active").findByPk(id, {
@@ -27,7 +27,7 @@ async function deleteSignup(id: string, auditLogger: AuditLogger, admin: boolean
     // Ensure there are no payments that could be paid with stale data.
     // This needs to also be done for deletion, since we use soft delete and thus aren't
     // firing ON DELETE RESTRICT constraints.
-    await checkForConflictingPaymentsForSignupUpdate(signup, transaction);
+    await checkForConflictingPaymentsForSignupUpdate(signup, transaction, admin);
 
     signup.quota = await signup.getQuota({
       attributes: ["id"],
@@ -48,8 +48,8 @@ async function deleteSignup(id: string, auditLogger: AuditLogger, admin: boolean
       throw new SignupsClosed("Signups closed for this event.");
     }
 
-    // Delete the DB object
-    await signup.destroy({ transaction });
+    // Soft delete the signup by setting deletedAt
+    await signup.update({ deletedAt: new Date() }, { transaction });
 
     // Create an audit log event
     await auditLogger(AuditEvent.DELETE_SIGNUP, { signup, transaction });

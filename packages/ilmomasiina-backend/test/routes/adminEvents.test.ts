@@ -167,6 +167,7 @@ describe("GET /api/admin/events/:id", () => {
         position: null,
         paymentStatus: SignupPaymentStatus.PENDING,
         manualPaymentStatus: null,
+        deletedAt: null,
       });
 
       const foundSignup = found!.signups.find((signup) => signup.id === firstSignup.id);

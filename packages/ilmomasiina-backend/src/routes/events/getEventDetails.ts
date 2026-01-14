@@ -9,6 +9,7 @@ import {
   AdminSignupSchema,
   EventID,
   EventSlug,
+  SignupPaymentStatus,
   UserEventPathParams,
   UserEventResponse,
 } from "@tietokilta/ilmomasiina-models";
@@ -200,7 +201,7 @@ export async function eventDetailsForAdmin(eventID: EventID): Promise<AdminEvent
     // Include all signups for the quotas
     include: [
       {
-        model: Signup.scope("active"),
+        model: Signup.scope("admin"),
         attributes: adminEventGetSignupAttrs,
         required: false,
         // ... and answers of signups
@@ -211,9 +212,8 @@ export async function eventDetailsForAdmin(eventID: EventID): Promise<AdminEvent
             required: false,
           },
           {
-            model: Payment.scope("active"),
+            model: Payment,
             attributes: ["status"],
-            as: "activePayment",
             required: false,
           },
         ],
@@ -226,16 +226,26 @@ export async function eventDetailsForAdmin(eventID: EventID): Promise<AdminEvent
     ],
   });
   // Admins get a simple result with many columns
+  // Filter out deleted signups that don't have PAID/REFUNDED status
   const res = {
     ...event.get({ plain: true }),
     // updatedAt must be manually repeated here, as it's not present in EventManualAttributes (see models/event.ts)
     updatedAt: event.updatedAt,
     questions: event.questions!.map((question) => question.get({ plain: true })),
-    quotas: quotas.map((quota) => ({
-      ...quota.get({ plain: true }),
-      signups: quota.signups!.map(formatSignupForAdmin),
-      signupCount: quota.signups!.length,
-    })),
+    quotas: quotas.map((quota) => {
+      const filteredSignups = quota.signups!.filter((signup) => {
+        // Include all non-deleted signups
+        if (!signup.deletedAt) return true;
+        // Only include deleted signups with PAID/REFUNDED status
+        const status = signup.effectivePaymentStatus;
+        return status === SignupPaymentStatus.PAID || status === SignupPaymentStatus.REFUNDED;
+      });
+      return {
+        ...quota.get({ plain: true }),
+        signups: filteredSignups.map(formatSignupForAdmin),
+        signupCount: filteredSignups.filter((s) => !s.deletedAt).length,
+      };
+    }),
   };
   return res as unknown as StringifyApi<typeof res>;
 }

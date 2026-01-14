@@ -42,6 +42,7 @@ describe("getSignupForEdit", () => {
         currency: signup.currency,
         products: signup.products,
         paymentStatus: SignupPaymentStatus.PENDING,
+        deletedAt: null,
       },
     });
   });

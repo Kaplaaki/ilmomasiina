@@ -24,6 +24,8 @@ export function getAnswersFromSignup(event: AdminEventResponse, signup: AdminSig
 export function getSignupsForAdminList(event: AdminEventResponse): AdminSignupWithQuota[] {
   const signupsArray = getSignupsAsList(event);
   return orderBy(signupsArray, [
+    // Deleted signups go last
+    (signup) => (signup.deletedAt ? 1 : 0),
     (signup) => [SignupStatus.IN_QUOTA, SignupStatus.IN_OPEN_QUOTA, SignupStatus.IN_QUEUE, null].indexOf(signup.status),
     "createdAt",
   ]);

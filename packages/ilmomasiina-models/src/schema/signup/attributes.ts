@@ -102,6 +102,9 @@ export const adminDynamicSignupAttributes = Type.Interface([publicDynamicSignupA
   paymentStatus: Nullable(Type.Enum(SignupPaymentStatus), {
     description: "Status of the payment for the signup, if applicable.",
   }),
+  deletedAt: Nullable(Type.String({ format: "date-time" }), {
+    description: "The deletion date of the signup, if deleted.",
+  }),
 });
 
 /** Non-editable, automatically updated signup attributes only returned for the signup owner. */

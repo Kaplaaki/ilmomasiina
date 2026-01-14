@@ -278,6 +278,7 @@
     "editor.signups.action.delete.confirm": "Are you sure? This cannot be undone.",
     "editor.signups.action.create": "Add signup",
     "editor.signups.unconfirmed": "Unconfirmed",
+    "editor.signups.deleted": "Deleted",
     "editor.editConflict.title": "Conflicting edits",
     "editor.editConflict.info1": "Another user or tab has edited this event at <1>{{time}}</1>.",
     "editor.editConflict.info1.withDeleted": "Another user or tab has edited this event at <1>{{time}}</1> and deleted the following quotas or questions:",

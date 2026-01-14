@@ -33,7 +33,7 @@ export const sendSignupConfirmationMail = sendSynchronouslyInTest(
     const lng = signup.language ?? config.defaultLanguage;
 
     // eslint-disable-next-line no-param-reassign
-    signup.activePayment = await signup.getActivePayment();
+    signup.payments = await signup.getPayments();
     const answers = await signup.getAnswers();
     const quota = await signup.getQuota({ include: [Event] });
     const event = quota.event!;

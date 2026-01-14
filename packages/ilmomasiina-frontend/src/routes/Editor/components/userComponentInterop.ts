@@ -65,4 +65,5 @@ export const previewDummySignup = (event: UserEventResponse): SignupForEdit => (
         ]
       : [],
   paymentStatus: SignupPaymentStatus.PENDING,
+  deletedAt: null,
 });

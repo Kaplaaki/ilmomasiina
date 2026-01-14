@@ -26,9 +26,8 @@ export default async function getSignupForEdit(
         include: [{ model: Event }],
       },
       {
-        model: Payment.scope("active"),
+        model: Payment,
         attributes: ["status"],
-        as: "activePayment",
         required: false,
       },
     ],

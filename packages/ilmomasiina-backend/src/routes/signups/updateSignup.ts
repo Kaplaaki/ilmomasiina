@@ -374,7 +374,7 @@ export async function updateSignupAsUser(
   });
 
   // Fetch updated payment data for response.
-  updatedSignup.activePayment = await updatedSignup.getActivePayment();
+  updatedSignup.payments = await updatedSignup.getPayments();
 
   // Send the confirmation email.
   await sendSignupConfirmationMail(updatedSignup, edited ? "edit" : "signup", false);
@@ -432,7 +432,7 @@ export async function updateSignupAsAdmin(
   });
 
   // Fetch updated payment data for response.
-  updatedSignup.activePayment = await updatedSignup.getActivePayment();
+  updatedSignup.payments = await updatedSignup.getPayments();
 
   // For clarity, always title the email "edit confirmation", even if the signup hadn't been confirmed yet.
   if (request.body.sendEmail ?? true) await sendSignupConfirmationMail(updatedSignup, "edit", true);

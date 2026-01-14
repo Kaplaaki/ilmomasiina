@@ -278,6 +278,7 @@
     "editor.signups.action.delete.confirm": "Oletko varma? Poistamista ei voi perua.",
     "editor.signups.action.create": "Lisää ilmoittautuminen",
     "editor.signups.unconfirmed": "Vahvistamatta",
+    "editor.signups.deleted": "Poistettu",
     "editor.editConflict.title": "Päällekkäinen muokkaus",
     "editor.editConflict.info1": "Toinen käyttäjä tai välilehti on muokannut tätä tapahtumaa <1>{{time}}</1>.",
     "editor.editConflict.info1.withDeleted": "Toinen käyttäjä tai välilehti on muokannut tätä tapahtumaa <1>{{time}}</1> ja poistanut seuraavat kiintiöt tai kysymykset:",

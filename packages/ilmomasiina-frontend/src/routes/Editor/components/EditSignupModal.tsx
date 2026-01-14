@@ -113,6 +113,7 @@ const EditSignupModal = () => {
       currency: CURRENCY,
       products: [],
       paymentStatus: null,
+      deletedAt: null,
       editableForMillis: Infinity,
       confirmableForMillis: Infinity,
       // Override with values from signup if this is an existing signup.

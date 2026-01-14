@@ -53,6 +53,7 @@ export interface SignupAttributes {
   /** Payment status set manually by an admin, without creating a Payment record. */
   manualPaymentStatus: ManualPaymentStatus | null;
   createdAt: Date;
+  deletedAt: Date | null;
   quotaId: Quota["id"];
 }
 
@@ -72,6 +73,7 @@ export interface SignupCreationAttributes extends Optional<
   | "products"
   | "manualPaymentStatus"
   | "createdAt"
+  | "deletedAt"
 > {}
 
 export class Signup extends Model<SignupAttributes, SignupCreationAttributes> implements SignupAttributes {
@@ -88,6 +90,7 @@ export class Signup extends Model<SignupAttributes, SignupCreationAttributes> im
   public currency!: string | null;
   public products!: ProductSchema[] | null;
   public manualPaymentStatus!: ManualPaymentStatus | null;
+  public deletedAt!: Date | null;
 
   public quotaId!: Quota["id"];
   public quota?: Quota;
@@ -109,6 +112,18 @@ export class Signup extends Model<SignupAttributes, SignupCreationAttributes> im
 
   public readonly createdAt!: Date;
   public readonly updatedAt!: Date;
+
+  public payments?: Payment[];
+  public getPayments!: HasManyGetAssociationsMixin<Payment>;
+  public countPayments!: HasManyCountAssociationsMixin;
+  public hasPayment!: HasManyHasAssociationMixin<Payment, Payment["id"]>;
+  public hasPayments!: HasManyHasAssociationsMixin<Payment, Payment["id"]>;
+  public setPayments!: HasManySetAssociationsMixin<Payment, Payment["id"]>;
+  public addPayment!: HasManyAddAssociationMixin<Payment, Payment["id"]>;
+  public addPayments!: HasManyAddAssociationsMixin<Payment, Payment["id"]>;
+  public removePayment!: HasManyRemoveAssociationMixin<Payment, Payment["id"]>;
+  public removePayments!: HasManyRemoveAssociationsMixin<Payment, Payment["id"]>;
+  public createPayment!: HasManyCreateAssociationMixin<Payment>;
 
   public activePayment?: Payment | null;
   public getActivePayment!: HasOneGetAssociationMixin<Payment>;
@@ -135,32 +150,21 @@ export class Signup extends Model<SignupAttributes, SignupCreationAttributes> im
   }
 
   public get effectivePaymentStatus(): SignupPaymentStatus | null {
-    // If the signup is paid either online or manually, it's paid.
-    if (this.activePayment?.status === PaymentStatus.PAID || this.manualPaymentStatus === ManualPaymentStatus.PAID)
-      return SignupPaymentStatus.PAID;
-    // If there is no need to pay, don't check further.
+    if (!this.payments) throw new Error("Payments not loaded for signup");
+    // Find payments by status
+    const paidPayment = this.payments.some((p) => p.status === PaymentStatus.PAID);
+    const refundedPayment = this.payments.some((p) => p.status === PaymentStatus.REFUNDED);
+
+    // If paid online or manually, it's paid
+    if (paidPayment || this.manualPaymentStatus === ManualPaymentStatus.PAID) return SignupPaymentStatus.PAID;
+    // If refunded online or manually, it's refunded
+    if (refundedPayment || this.manualPaymentStatus === ManualPaymentStatus.REFUNDED)
+      return SignupPaymentStatus.REFUNDED;
+    // If no need to pay, don't check further
     if (!this.hasPrice) return null;
-    // If an active payment exists, use its status.
-    if (this.activePayment != null) return Signup.paymentStatusMap[this.activePayment.status];
-    // If the manual payment is set, use that.
-    if (this.manualPaymentStatus != null) return Signup.manualPaymentStatusMap[this.manualPaymentStatus];
-    // Finally, if neither is set, but the signup has a price, it's pending.
+    // If the signup has a price but no payment, it's pending (regardless of if payments exist)
     return SignupPaymentStatus.PENDING;
   }
-
-  public static readonly paymentStatusMap: Record<PaymentStatus, SignupPaymentStatus> = {
-    [PaymentStatus.CREATING]: SignupPaymentStatus.PENDING,
-    [PaymentStatus.PENDING]: SignupPaymentStatus.PENDING,
-    [PaymentStatus.PAID]: SignupPaymentStatus.PAID,
-    [PaymentStatus.EXPIRED]: SignupPaymentStatus.PENDING,
-    [PaymentStatus.CREATION_FAILED]: SignupPaymentStatus.PENDING,
-    [PaymentStatus.REFUNDED]: SignupPaymentStatus.REFUNDED,
-  };
-
-  public static readonly manualPaymentStatusMap: Record<ManualPaymentStatus, SignupPaymentStatus> = {
-    [ManualPaymentStatus.PAID]: SignupPaymentStatus.PAID,
-    [ManualPaymentStatus.REFUNDED]: SignupPaymentStatus.REFUNDED,
-  };
 }
 
 export default function setupSignupModel(sequelize: Sequelize) {
@@ -235,24 +239,42 @@ export default function setupSignupModel(sequelize: Sequelize) {
         defaultValue: () => new Date(),
         allowNull: false,
       },
+      deletedAt: {
+        type: DataTypes.DATE,
+        allowNull: true,
+      },
     },
     {
       sequelize,
       modelName: "signup",
       freezeTableName: true,
-      paranoid: true,
+      paranoid: false,
       scopes: {
         active: () => ({
           where: {
+            // Not deleted
+            deletedAt: { [Op.is]: null },
             [Op.or]: {
               // Is confirmed, or is new enough
-              confirmedAt: {
-                [Op.ne]: null,
-              },
-              createdAt: {
-                [Op.gt]: moment().subtract(config.signupConfirmMins, "minutes").toDate(),
-              },
+              confirmedAt: { [Op.ne]: null },
+              createdAt: { [Op.gt]: moment().subtract(config.signupConfirmMins, "minutes").toDate() },
             },
+          },
+        }),
+        admin: () => ({
+          where: {
+            [Op.or]: [
+              // Non-deleted active signups like above
+              {
+                deletedAt: { [Op.is]: null },
+                [Op.or]: {
+                  confirmedAt: { [Op.ne]: null },
+                  createdAt: { [Op.gt]: moment().subtract(config.signupConfirmMins, "minutes").toDate() },
+                },
+              },
+              // All deleted signups - filter by payment status after query
+              { deletedAt: { [Op.ne]: null } },
+            ],
           },
         }),
       },

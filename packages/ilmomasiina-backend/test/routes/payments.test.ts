@@ -271,7 +271,6 @@ describe("startPayment", () => {
     // Create a free signup
     const [signup] = await testSignups(event, { count: 1, confirmed: true, quotaId: event.quotas![0].id });
     expect(signup.price).toBe(0);
-    expect(signup.effectivePaymentStatus).toBe(null);
 
     // Attempt to start payment - should fail
     const result = await api.startPayment(signup.id);
@@ -493,7 +492,7 @@ describe("payment and signup update locking", () => {
     await signup.reload();
   });
 
-  test("admin signup deletion blocked when PAID payment exists", async () => {
+  test("admin can delete signups even when PAID payment exists", async () => {
     const { signup } = await defaultTestEventAndSignup();
 
     // Create a payment
@@ -505,12 +504,13 @@ describe("payment and signup update locking", () => {
     await payment!.reload();
     expect(payment!.status).toBe(PaymentStatus.PAID);
 
-    // Attempt to delete signup - should fail
-    const result = await api.deleteSignupAsAdmin(signup.id);
-    expect(result).toBeApiError(400, ErrorCode.SIGNUP_ALREADY_PAID);
+    // Admin CAN now delete paid signups (soft delete)
+    const [, response] = await api.deleteSignupAsAdmin(signup.id);
+    expect(response.statusCode).toBe(204);
 
-    // Will fail if deleted or soft deleted
+    // Verify it was soft-deleted
     await signup.reload();
+    expect(signup.deletedAt).toBeTruthy();
   });
 
   test("signup update blocks ongoing payment creation by marking as CREATION_FAILED", async () => {
@@ -645,6 +645,79 @@ describe("payment and signup update locking", () => {
   });
 });
 
+describe("getEventDetailsForAdmin", () => {
+  test("returns paid and refunded signups even when deleted", async () => {
+    const { event, signup } = await defaultTestEventAndSignup();
+
+    // Create a payment and mark it as PAID
+    await api.startPayment(signup.id);
+    const payment = await Payment.findOne({ where: { signupId: signup.id } });
+    await checkoutSessionStatusUpdated(payment!.stripeCheckoutSessionId!, "complete");
+
+    // Delete the signup
+    const [, response] = await api.deleteSignupAsAdmin(signup.id);
+    expect(response.statusCode).toBe(204);
+
+    // Verify it's still returned by the admin event API
+    let [data] = await api.fetchAdminEventDetails(event);
+    expect(data.quotas[0].signupCount).toBe(0); // Excludes deleted signups
+    expect(data.quotas[0].signups.length).toBe(1);
+    expect(data.quotas[0].signups[0].id).toBe(signup.id);
+    expect(data.quotas[0].signups[0].paymentStatus).toBe(SignupPaymentStatus.PAID);
+
+    // Mark the payment as REFUNDED
+    await payment!.update({ status: PaymentStatus.REFUNDED });
+
+    // Verify it's still returned by the admin event API
+    [data] = await api.fetchAdminEventDetails(event);
+    expect(data.quotas[0].signupCount).toBe(0); // Excludes deleted signups
+    expect(data.quotas[0].signups.length).toBe(1);
+    expect(data.quotas[0].signups[0].id).toBe(signup.id);
+    expect(data.quotas[0].signups[0].paymentStatus).toBe(SignupPaymentStatus.REFUNDED);
+  });
+
+  test("returns correct paymentStatus when refunded and repaid", async () => {
+    const { event, signup } = await defaultTestEventAndSignup();
+
+    // Create a payment and mark it as PAID
+    await api.startPayment(signup.id);
+    const payment = await Payment.findOne({ where: { signupId: signup.id } });
+
+    // Verify initial paymentStatus is PENDING
+    let [data] = await api.fetchAdminEventDetails(event);
+    expect(data.quotas[0].signups[0].paymentStatus).toBe(SignupPaymentStatus.PENDING);
+
+    // Mark payment as PAID
+    await checkoutSessionStatusUpdated(payment!.stripeCheckoutSessionId!, "complete");
+
+    // Verify paymentStatus is PAID
+    [data] = await api.fetchAdminEventDetails(event);
+    expect(data.quotas[0].signups[0].paymentStatus).toBe(SignupPaymentStatus.PAID);
+
+    // Mark the payment as REFUNDED
+    await payment!.update({ status: PaymentStatus.REFUNDED });
+
+    // Verify paymentStatus is REFUNDED
+    [data] = await api.fetchAdminEventDetails(event);
+    expect(data.quotas[0].signups[0].paymentStatus).toBe(SignupPaymentStatus.REFUNDED);
+
+    // Create a new payment
+    await api.startPayment(signup.id);
+    const newPayment = await Payment.findOne({ where: { signupId: signup.id, id: { [Op.ne]: payment!.id } } });
+
+    // Verify paymentStatus is still REFUNDED (overrides PENDING)
+    [data] = await api.fetchAdminEventDetails(event);
+    expect(data.quotas[0].signups[0].paymentStatus).toBe(SignupPaymentStatus.REFUNDED);
+
+    // Mark the new payment as PAID
+    await checkoutSessionStatusUpdated(newPayment!.stripeCheckoutSessionId!, "complete");
+
+    // Verify paymentStatus is PAID again
+    [data] = await api.fetchAdminEventDetails(event);
+    expect(data.quotas[0].signups[0].paymentStatus).toBe(SignupPaymentStatus.PAID);
+  });
+});
+
 describe("completePayment", () => {
   test("refreshes PENDING payment and returns signup when complete", async () => {
     const { event, signup } = await defaultTestEventAndSignup();
@@ -680,6 +753,7 @@ describe("completePayment", () => {
         currency: payment!.currency, // important
         products: payment!.products, // important
         paymentStatus: SignupPaymentStatus.PAID, // important
+        deletedAt: null,
       },
     });
 
