@@ -57,8 +57,8 @@ const EditSignupModalBody = ({ handleSubmit, submitting }: FormRenderProps<Signu
       </Modal.Header>
       <Modal.Body>
         {isNew && <FieldRow name="quotaId" as={QuotaField} label={t("editor.editSignup.quota")} required />}
-        <CommonFields />
-        <QuestionFields name="answers" />
+        <CommonFields canEdit canEditNameAndEmail />
+        <QuestionFields name="answers" canEdit />
         <FieldRow
           name="sendEmail"
           as={BsForm.Check}
@@ -132,7 +132,6 @@ const EditSignupModal = () => {
       editingClosedOnLoad: false,
       confirmableUntil: Infinity,
       editableUntil: Infinity,
-      admin: true,
     };
   }, [values, editedSignup]);
 

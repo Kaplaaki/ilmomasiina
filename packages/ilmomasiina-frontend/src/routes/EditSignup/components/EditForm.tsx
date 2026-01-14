@@ -4,7 +4,7 @@ import { FORM_ERROR } from "final-form";
 import { Alert, Button, Form as BsForm, Table } from "react-bootstrap";
 import { Form, FormRenderProps, useFormState } from "react-final-form";
 import { useTranslation } from "react-i18next";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { toast } from "react-toastify";
 
 import {
@@ -100,13 +100,7 @@ const SubmitError = () => {
 const EXPIRY_WARNING_THRESHOLD = 5 * 60 * 1000;
 
 const EditableUntil = () => {
-  const {
-    localizedEvent: event,
-    signup,
-    editingClosedOnLoad,
-    editableUntil,
-    confirmableUntil,
-  } = useEditSignupContext();
+  const { signup, editingClosedOnLoad, editableUntil, confirmableUntil } = useEditSignupContext();
   const { t } = useTranslation();
   const duration = useDurationFormatter();
 
@@ -119,14 +113,12 @@ const EditableUntil = () => {
   }, [editingClosedOnLoad]);
 
   if (editingClosedOnLoad) {
-    return (
-      <>
-        <p>{t("editSignup.editable.closed")}</p>
-        <p>
-          <Link to={paths.eventDetails(event!.slug)}>{t("editSignup.backToEvent")}</Link>
-        </p>
-      </>
-    );
+    return <p>{t("editSignup.editable.closed")}</p>;
+  }
+
+  if (signup!.paymentStatus === SignupPaymentStatus.PAID) {
+    // Handled by the <Alert> in <Payment>
+    return null;
   }
 
   const now = Date.now();
@@ -144,16 +136,18 @@ const EditableUntil = () => {
   );
 };
 
-const EditFormSubmit = ({ disabled }: { disabled: boolean }) => {
-  const { localizedEvent: event, editingClosedOnLoad, isNew, preview } = useEditSignupContext();
+const EditFormSubmit = ({ canEdit, disabled }: { canEdit: boolean; disabled: boolean }) => {
+  const { localizedEvent: event, isNew, preview } = useEditSignupContext();
   const { t } = useTranslation();
 
-  return editingClosedOnLoad ? null : (
+  return (
     <>
-      <p>
-        {t("editSignup.editInstructions")}
-        {event!.emailQuestion && ` ${t("editSignup.editInstructions.email")}`}
-      </p>
+      {canEdit && (
+        <p>
+          {t("editSignup.editInstructions")}
+          {event!.emailQuestion && ` ${t("editSignup.editInstructions.email")}`}
+        </p>
+      )}
       <nav className="ilmo--submit-buttons">
         {!preview && !isNew && (
           <LinkButton variant="link" to={paths.eventDetails(event!.slug)}>
@@ -161,7 +155,7 @@ const EditFormSubmit = ({ disabled }: { disabled: boolean }) => {
           </LinkButton>
         )}
         {!preview && (
-          <Button type="submit" variant="primary" formNoValidate disabled={disabled}>
+          <Button type="submit" variant="primary" formNoValidate disabled={!canEdit || disabled}>
             {isNew ? t("editSignup.action.save") : t("editSignup.action.edit")}
           </Button>
         )}
@@ -188,27 +182,41 @@ const EditFormBody = ({ handleSubmit, processing, onDelete, onPay }: BodyProps) 
   const onSubmit = useEvent(handleSubmit);
 
   const showPayment = signup!.price != null && signup!.price > 0;
+  const alreadyPaid = signup!.paymentStatus === SignupPaymentStatus.PAID;
+  // Allow editing for non-admins if not closed and not already paid.
+  const canEdit = !editingClosedOnLoad && !alreadyPaid;
+  // Allow name and email editing for non-admins if canEdit and the signup is not confirmed.
+  const canEditNameAndEmail = canEdit && isNew!;
 
   return useMemo(
     () => (
       <NarrowContainer>
         {showPayment && <Payment onPay={onPay} disabled={submitting || processing} />}
         <h2>
-          {/* eslint-disable-next-line no-nested-ternary */}
-          {preview ? t("editSignup.title.preview") : isNew ? t("editSignup.title.signup") : t("editSignup.title.edit")}
+          {
+            // eslint-disable-next-line no-nested-ternary
+            preview
+              ? t("editSignup.title.preview")
+              : // eslint-disable-next-line no-nested-ternary
+                !canEdit
+                ? t("editSignup.title.view")
+                : isNew
+                  ? t("editSignup.title.signup")
+                  : t("editSignup.title.edit")
+          }
         </h2>
         <SignupStatus />
         <EditableUntil />
         <SubmitError />
         <BsForm onSubmit={onSubmit} className="ilmo--form">
-          <CommonFields />
-          <QuestionFields name="answers" />
-          <EditFormSubmit disabled={submitting || processing} />
+          <CommonFields canEdit={canEdit} canEditNameAndEmail={canEditNameAndEmail} />
+          <QuestionFields name="answers" canEdit={canEdit} />
+          <EditFormSubmit canEdit={canEdit} disabled={submitting || processing} />
         </BsForm>
-        {!editingClosedOnLoad && !preview && <DeleteSignup processing={processing} onDelete={onDelete} />}
+        {canEdit && !preview && <DeleteSignup processing={processing} onDelete={onDelete} />}
       </NarrowContainer>
     ),
-    [onSubmit, onDelete, onPay, processing, isNew, editingClosedOnLoad, submitting, preview, showPayment, t],
+    [onSubmit, onDelete, onPay, processing, isNew, submitting, canEdit, canEditNameAndEmail, preview, showPayment, t],
   );
 };
 
