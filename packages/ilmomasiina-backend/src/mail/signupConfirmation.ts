@@ -30,7 +30,7 @@ export const sendSignupConfirmationMail = sendSynchronouslyInTest(
   async (signup: Signup, type: ConfirmationMailParams["type"], admin: boolean) => {
     if (signup.email === null) return;
 
-    const lng = signup.language ?? config.defaultLanguage;
+    const lang = signup.language ?? config.defaultLanguage;
 
     // eslint-disable-next-line no-param-reassign
     signup.payments = await signup.getPayments();
@@ -39,7 +39,7 @@ export const sendSignupConfirmationMail = sendSynchronouslyInTest(
     const event = quota.event!;
     const questions = await event.getQuestions({ order: [["order", "ASC"]] });
 
-    const localeQuestions = event.languages[lng]?.questions ?? questions;
+    const localeQuestions = event.languages[lang]?.questions ?? questions;
 
     // Show name only if filled
     const fullName = `${signup.firstName ?? ""} ${signup.lastName ?? ""}`.trim();
@@ -52,11 +52,11 @@ export const sendSignupConfirmationMail = sendSynchronouslyInTest(
         answer: Array.isArray(answer!.answer) ? answer!.answer.join(", ") : answer!.answer,
       }));
 
-    const dateFormat = i18n.t("dateFormat.general", { lng });
+    const dateFormat = i18n.t("dateFormat.general", { lng: lang });
     const date = event.date && moment(event.date).tz(config.timezone).format(dateFormat);
 
     const editToken = generateToken(signup.id);
-    const cancelLink = editSignupUrl({ id: signup.id, editToken, lang: lng });
+    const cancelLink = editSignupUrl({ id: signup.id, editToken, lang });
 
     const params = {
       name: fullName,
@@ -81,7 +81,7 @@ export const sendPaymentConfirmationMail = sendSynchronouslyInTest(async (paymen
   const signup = await payment.getSignup();
   if (signup.email === null) return;
 
-  const lng = signup.language ?? config.defaultLanguage;
+  const lang = signup.language ?? config.defaultLanguage;
 
   const quota = await signup.getQuota({
     attributes: [],
@@ -90,12 +90,12 @@ export const sendPaymentConfirmationMail = sendSynchronouslyInTest(async (paymen
   const event = quota.event!;
 
   const editToken = generateToken(signup.id);
-  const cancelLink = editSignupUrl({ id: signup.id, editToken, lang: lng });
+  const cancelLink = editSignupUrl({ id: signup.id, editToken, lang });
 
   // Show name only if filled
   const fullName = `${signup.firstName ?? ""} ${signup.lastName ?? ""}`.trim();
 
-  const priceFormatter = new Intl.NumberFormat(i18n.t("currencyFormat.locale", { lng }), {
+  const priceFormatter = new Intl.NumberFormat(i18n.t("currencyFormat.locale", { lng: lang }), {
     style: "currency",
     currency: payment.currency,
     minimumFractionDigits: 2,
