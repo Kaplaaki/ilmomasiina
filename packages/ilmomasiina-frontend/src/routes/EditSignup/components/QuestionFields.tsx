@@ -179,11 +179,11 @@ const QuestionField = ({ name, question, disabled }: QuestionFieldProps) => {
 
 type Props = {
   name: string;
+  canEdit: boolean;
 };
 
-const QuestionFields = ({ name }: Props) => {
-  const { localizedEvent: event, editingClosedOnLoad, admin } = useEditSignupContext();
-  const canEdit = !editingClosedOnLoad || admin;
+const QuestionFields = ({ name, canEdit }: Props) => {
+  const { localizedEvent: event } = useEditSignupContext();
   return (
     <>
       {event!.questions.map((question) => (

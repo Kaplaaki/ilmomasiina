@@ -1,8 +1,9 @@
 import { FastifyReply, FastifyRequest } from "fastify";
 
-import type { SignupForEditResponse, SignupPathParams } from "@tietokilta/ilmomasiina-models";
+import { SignupForEditResponse, SignupPathParams } from "@tietokilta/ilmomasiina-models";
 import { Answer } from "../../models/answer";
 import { Event } from "../../models/event";
+import { Payment } from "../../models/payment";
 import { Question } from "../../models/question";
 import { Quota } from "../../models/quota";
 import { Signup } from "../../models/signup";
@@ -24,14 +25,19 @@ export default async function getSignupForEdit(
         model: Quota,
         include: [{ model: Event }],
       },
+      {
+        model: Payment,
+        attributes: ["status"],
+        required: false,
+      },
     ],
   });
-  if (signup === null) {
+  if (!signup || !signup.quota || !signup.quota.event) {
     // Event not found with id, probably deleted
-    throw new NoSuchSignup("No signup found with given id");
+    throw new NoSuchSignup("Signup expired or already deleted");
   }
 
-  const event = signup.quota!.event!;
+  const { event } = signup.quota;
 
   // Fetch these separately to avoid O(n^3) returned rows.
   event.questions = await Question.findAll({ where: { eventId: event.id }, order: [["order", "ASC"]] });
@@ -55,6 +61,7 @@ export default async function getSignupForEdit(
       confirmed: Boolean(signup.confirmedAt),
       answers: signup.answers!.map((answer) => answer.get({ plain: true })),
       quota: signup.quota!.get({ plain: true }),
+      paymentStatus: signup.effectivePaymentStatus,
       confirmableForMillis,
       editableForMillis,
     },

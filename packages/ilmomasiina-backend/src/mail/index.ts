@@ -24,6 +24,18 @@ export interface ConfirmationMailParams {
   cancelLink: string;
 }
 
+export interface PaymentMailParams {
+  totalFormatted: string;
+  currency: string;
+  products: {
+    name: string;
+    amount: number;
+    unitPriceFormatted: string;
+  }[];
+  event: Event;
+  cancelLink: string;
+}
+
 export interface NewUserMailParams {
   email: string;
   password: string;
@@ -50,7 +62,8 @@ function getTemplate(language: string | null, template: string) {
 }
 
 const TEMPLATE_OPTIONS: Email.EmailConfig = {
-  juice: true,
+  // When printing to console, don't preprocess CSS, as it makes the printouts massive.
+  juice: mailTransporter.transporter.name !== "console fallback",
   juiceResources: {
     preserveImportant: true,
     webResources: {
@@ -87,6 +100,25 @@ export default class EmailService {
         lng,
         event: params.event.title,
       });
+      await EmailService.send(to, subject, html);
+    } catch (error) {
+      console.error(error);
+    }
+  }
+
+  static async sendPaymentConfirmationMail(to: string, language: string | null, params: PaymentMailParams) {
+    try {
+      const email = new Email(TEMPLATE_OPTIONS);
+      const brandedParams = {
+        ...params,
+        branding: {
+          footerText: config.brandingMailFooterText,
+          footerLink: config.brandingMailFooterLink,
+        },
+      };
+      const { template, lng } = getTemplate(language, "payment");
+      const html = await email.render(template, brandedParams);
+      const subject = i18n.t("emails.paymentConfirmation.subject", { lng, event: params.event.title });
       await EmailService.send(to, subject, html);
     } catch (error) {
       console.error(error);

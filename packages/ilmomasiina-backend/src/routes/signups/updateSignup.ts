@@ -16,7 +16,7 @@ import type {
 } from "@tietokilta/ilmomasiina-models";
 import { AuditEvent, QuestionType, SignupFieldError } from "@tietokilta/ilmomasiina-models";
 import config from "../../config";
-import sendSignupConfirmationMail from "../../mail/signupConfirmation";
+import { sendSignupConfirmationMail } from "../../mail/signupConfirmation";
 import { getSequelize } from "../../models";
 import { Answer, AnswerCreationAttributes } from "../../models/answer";
 import { Event } from "../../models/event";
@@ -24,13 +24,15 @@ import { Question } from "../../models/question";
 import { Quota } from "../../models/quota";
 import { Signup } from "../../models/signup";
 import { formatSignupForAdmin } from "../events/getEventDetails";
+import { checkForConflictingPaymentsForSignupUpdate, expireExistingPaymentsForSignupUpdate } from "../payment/stripe";
+import type { StringifyApi } from "../utils";
 import { refreshSignupPositions } from "./computeSignupPosition";
 import { signupEditable } from "./createNewSignup";
 import { NoSuchQuota, NoSuchSignup, SignupsClosed, SignupValidationError } from "./errors";
 
-/** Computes product lines for a given quota. */
+/** Computes product lines for a given quota. `quota.event` must be present. */
 export function getQuotaProducts(quota: Quota): ProductSchema[] {
-  if (quota.price) {
+  if (quota.event!.paymentsEnabled && quota.price) {
     return [
       {
         name: quota.title,
@@ -42,6 +44,53 @@ export function getQuotaProducts(quota: Quota): ProductSchema[] {
   return [];
 }
 
+/** Validates and gathers basic fields of a signup that can be edited in its current state. */
+function validateBasicFields(signup: Signup, event: Event, body: SignupUpdateBody) {
+  const fields: Partial<Signup> = {};
+  const errors: SignupValidationErrors = {};
+
+  const notConfirmedYet = !signup.confirmedAt;
+
+  // Check that required common fields are present (if first time confirming)
+  if (notConfirmedYet && event.nameQuestion) {
+    const { firstName, lastName } = body;
+    if (!firstName) {
+      errors.firstName = SignupFieldError.MISSING;
+    } else if (firstName.length > Signup.MAX_NAME_LENGTH) {
+      errors.firstName = SignupFieldError.TOO_LONG;
+    }
+    if (!lastName) {
+      errors.lastName = SignupFieldError.MISSING;
+    } else if (lastName.length > Signup.MAX_NAME_LENGTH) {
+      errors.lastName = SignupFieldError.TOO_LONG;
+    }
+    fields.firstName = firstName;
+    fields.lastName = lastName;
+  }
+
+  if (notConfirmedYet && event.emailQuestion) {
+    const { email } = body;
+    if (!email) {
+      errors.email = SignupFieldError.MISSING;
+    } else if (email.length > Signup.MAX_EMAIL_LENGTH) {
+      errors.email = SignupFieldError.TOO_LONG;
+    } else if (!isEmail(email)) {
+      errors.email = SignupFieldError.INVALID_EMAIL;
+    }
+    fields.email = email;
+  }
+
+  // Update signup language and name publicity if provided
+  if (body.namePublic != null) {
+    fields.namePublic = body.namePublic;
+  }
+  if (body.language) {
+    fields.language = body.language;
+  }
+
+  return { fields, errors };
+}
+
 /**
  * Validates the answers to all questions and computes product lines resulting from them.
  *
@@ -50,7 +99,7 @@ export function getQuotaProducts(quota: Quota): ProductSchema[] {
  * If `admin` is false and `answerErrors` is returned, other returned values are not valid and should not be used.
  */
 export function validateAnswersAndGetProducts(
-  event: Pick<Event, "questions" | "languages">,
+  event: Pick<Event, "paymentsEnabled" | "questions" | "languages">,
   rawAnswers: SignupUpdateBody["answers"] | undefined,
   admin: boolean,
 ) {
@@ -62,40 +111,44 @@ export function validateAnswersAndGetProducts(
     let answer = rawAnswers?.find((a) => a.questionId === question.id)?.answer;
     let error: SignupFieldError | undefined;
 
-    const validOptions: string[] = [];
-    const optionPrices = new Map<string, number>();
+    const validOptions = new Map<string, number>();
 
-    if (question.type === QuestionType.CHECKBOX || question.type === QuestionType.SELECT) {
+    if ((question.type === QuestionType.CHECKBOX || question.type === QuestionType.SELECT) && question.options) {
       // First, collect valid options and their prices from the default language
-      if (question.options) {
-        validOptions.push(...question.options);
-
-        if (question.prices) {
-          question.options.forEach((opt, i) => {
-            optionPrices.set(opt, question.prices![i] ?? 0);
-          });
+      question.options.forEach((opt, i) => {
+        if (validOptions.has(opt)) {
+          // These shouldn't occur after 3.0, but can exist in the database from before.
+          console.warn(`Duplicate option "${opt}" detected in question ${question.id}`);
+          error = SignupFieldError.DUPLICATE_OPTION;
+          return;
         }
-      }
-
+        validOptions.set(opt, i);
+      });
       // Then, collect valid options from other languages
       for (const lang of Object.values(event.languages)) {
         const localized = lang.questions[index];
 
         if (localized && localized.options) {
-          // Only include non-empty options, since empty ones use the default language
-          const localizedOptions = localized.options.filter(Boolean);
-          validOptions.push(...localizedOptions);
+          // eslint-disable-next-line @typescript-eslint/no-loop-func -- false positive on `error`
+          localized.options.forEach((opt, i) => {
+            // Only include non-empty options, since empty ones use the default language
+            if (!opt) return;
 
-          if (question.prices) {
-            localized.options.forEach((opt, i) => {
-              optionPrices.set(opt, question.prices![i] ?? 0);
-            });
-          }
+            if (validOptions.has(opt) && validOptions.get(opt) !== i) {
+              console.warn(`Duplicate option "${opt}" detected in question ${question.id}`);
+              error = SignupFieldError.DUPLICATE_OPTION;
+              return;
+            }
+            validOptions.set(opt, i);
+          });
         }
       }
     }
 
-    if (!answer || !answer.length) {
+    if (error) {
+      // There was an error collecting valid options, skip further validation.
+      answer = "";
+    } else if (!answer || !answer.length) {
       // Disallow empty answers to required questions
       if (question.required) {
         error = SignupFieldError.MISSING;
@@ -112,18 +165,22 @@ export function validateAnswersAndGetProducts(
         error = SignupFieldError.WRONG_TYPE;
       } else {
         // Check that all checkbox answers are valid
+        const usedOptions = new Set<number>();
         for (const option of answer) {
-          if (!validOptions.includes(option)) {
+          const optIndex = validOptions.get(option);
+          if (optIndex === undefined) {
             error = SignupFieldError.NOT_AN_OPTION;
+          } else if (usedOptions.has(optIndex)) {
+            error = SignupFieldError.DUPLICATE_OPTION;
           } else {
-            // Generate a product if the option is known and the question has prices,
-            // even if the option is free.
-            const price = optionPrices.get(option);
-            if (price != null) {
+            usedOptions.add(optIndex);
+            // Question.prices are normalized to null when they are all zero, so any option prices being set implies prices exist.
+            // Generate a product if the option is known and the question has prices, even if the option is free.
+            if (event.paymentsEnabled && question.prices) {
               answerProducts.push({
                 name: option,
                 amount: 1,
-                unitPrice: price,
+                unitPrice: question.prices[optIndex] ?? 0,
               });
             }
           }
@@ -151,17 +208,16 @@ export function validateAnswersAndGetProducts(
             break;
           case QuestionType.SELECT: {
             // Check that the select answer is valid
-            if (!validOptions.includes(answer)) {
+            const optIndex = validOptions.get(answer);
+            if (optIndex === undefined) {
               error = SignupFieldError.NOT_AN_OPTION;
             } else {
-              // Generate a product if the option is known and the question has prices,
-              // even if the option is free.
-              const price = optionPrices.get(answer);
-              if (price != null) {
+              // Generate a product if the option is known and the question has prices, even if the option is free.
+              if (event.paymentsEnabled && question.prices) {
                 answerProducts.push({
                   name: answer,
                   amount: 1,
-                  unitPrice: price,
+                  unitPrice: question.prices[optIndex] ?? 0,
                 });
               }
             }
@@ -218,11 +274,15 @@ async function getSignupAndEventForUpdate(id: SignupID, transaction: Transaction
         ],
       },
     ],
+    order: [[Event, Question, "order", "ASC"]],
     transaction,
   });
-  const event = signup.quota.event!;
+  if (!signup.quota || !signup.quota.event) {
+    // Quota or event soft deleted
+    throw new NoSuchSignup("Signup expired or already deleted");
+  }
 
-  return { signup, event };
+  return { signup, event: signup.quota.event };
 }
 
 /** Internal function to update the contents of a signup. Performs no validation at all. */
@@ -271,7 +331,10 @@ export async function updateSignupAsUser(
   request: FastifyRequest<{ Params: SignupPathParams; Body: SignupUpdateBody }>,
   reply: FastifyReply,
 ): Promise<SignupUpdateResponse> {
-  const { updatedSignup, edited } = await getSequelize().transaction(async (transaction) => {
+  // First, attempt to expire any existing payments for this signup.
+  await expireExistingPaymentsForSignupUpdate(request.params.id);
+
+  const { updatedSignup, updatedAnswers, edited } = await getSequelize().transaction(async (transaction) => {
     const { signup, event } = await getSignupAndEventForUpdate(request.params.id, transaction);
 
     if (!signupEditable(event, signup)) {
@@ -282,45 +345,7 @@ export async function updateSignupAsUser(
     const notConfirmedYet = !signup.confirmedAt;
 
     // Collect fields to update on signup itself (name and email only editable on first confirmation)
-    const fields: Partial<Signup> = {};
-    const errors: SignupValidationErrors = {};
-
-    // Check that required common fields are present (if first time confirming)
-    if (notConfirmedYet && event.nameQuestion) {
-      const { firstName, lastName } = request.body;
-      if (!firstName) {
-        errors.firstName = SignupFieldError.MISSING;
-      } else if (firstName.length > Signup.MAX_NAME_LENGTH) {
-        errors.firstName = SignupFieldError.TOO_LONG;
-      }
-      if (!lastName) {
-        errors.lastName = SignupFieldError.MISSING;
-      } else if (lastName.length > Signup.MAX_NAME_LENGTH) {
-        errors.lastName = SignupFieldError.TOO_LONG;
-      }
-      fields.firstName = firstName;
-      fields.lastName = lastName;
-    }
-
-    if (notConfirmedYet && event.emailQuestion) {
-      const { email } = request.body;
-      if (!email) {
-        errors.email = SignupFieldError.MISSING;
-      } else if (email.length > Signup.MAX_EMAIL_LENGTH) {
-        errors.email = SignupFieldError.TOO_LONG;
-      } else if (!isEmail(email)) {
-        errors.email = SignupFieldError.INVALID_EMAIL;
-      }
-      fields.email = email;
-    }
-
-    // Update signup language and name publicity if provided
-    if (request.body.namePublic != null) {
-      fields.namePublic = request.body.namePublic;
-    }
-    if (request.body.language) {
-      fields.language = request.body.language;
-    }
+    const { fields, errors } = validateBasicFields(signup, event, request.body);
 
     // Validate answers and compute products from them
     const { newAnswers, answerProducts, answerErrors } = validateAnswersAndGetProducts(
@@ -334,19 +359,35 @@ export async function updateSignupAsUser(
       throw new SignupValidationError("Errors validating signup", errors);
     }
 
+    // Ensure there are no payments that could be paid with stale data,
+    // nor any paid payments (since the expected paid amount might change).
+    await checkForConflictingPaymentsForSignupUpdate(signup, transaction);
+
     await updateExistingSignup(signup, fields, newAnswers, answerProducts, transaction);
     await request.logEvent(AuditEvent.EDIT_SIGNUP, { signup, event, transaction });
-    return { updatedSignup: signup, edited: !notConfirmedYet };
+
+    return {
+      updatedSignup: signup,
+      updatedAnswers: newAnswers,
+      edited: !notConfirmedYet,
+    };
   });
 
+  // Fetch updated payment data for response.
+  updatedSignup.payments = await updatedSignup.getPayments();
+
   // Send the confirmation email.
-  // Intentionally not awaited, as we don't want to delay the response for an API call.
-  sendSignupConfirmationMail(updatedSignup, edited ? "edit" : "signup", false);
+  await sendSignupConfirmationMail(updatedSignup, edited ? "edit" : "signup", false);
+
+  const response = {
+    ...updatedSignup.get({ plain: true }),
+    confirmed: Boolean(updatedSignup.confirmedAt),
+    answers: updatedAnswers,
+    paymentStatus: updatedSignup.effectivePaymentStatus,
+  };
 
   reply.status(200);
-  return {
-    id: updatedSignup.id,
-  };
+  return response as unknown as StringifyApi<typeof response>;
 }
 
 /** Internal function that just converts the request body and then calls updateExistingSignup */
@@ -369,6 +410,10 @@ async function updateExistingSignupAsAdmin(
   // Ignore all other validation.
   const { newAnswers, answerProducts } = validateAnswersAndGetProducts(event, body.answers, true);
 
+  // Ensure there are no payments that could be paid with stale data.
+  // Paid payments are allowed to exist; admins are expected to deal with this.
+  await checkForConflictingPaymentsForSignupUpdate(signup, transaction, true);
+
   await updateExistingSignup(signup, fields, newAnswers, answerProducts, transaction);
 }
 
@@ -376,6 +421,9 @@ export async function updateSignupAsAdmin(
   request: FastifyRequest<{ Params: SignupPathParams; Body: AdminSignupUpdateBody }>,
   reply: FastifyReply,
 ): Promise<AdminSignupSchema> {
+  // First, attempt to expire any existing payments for this signup.
+  await expireExistingPaymentsForSignupUpdate(request.params.id, true);
+
   const updatedSignup = await getSequelize().transaction(async (transaction) => {
     const { signup, event } = await getSignupAndEventForUpdate(request.params.id, transaction);
     await updateExistingSignupAsAdmin(signup, event, request.body, transaction);
@@ -383,8 +431,11 @@ export async function updateSignupAsAdmin(
     return signup;
   });
 
+  // Fetch updated payment data for response.
+  updatedSignup.payments = await updatedSignup.getPayments();
+
   // For clarity, always title the email "edit confirmation", even if the signup hadn't been confirmed yet.
-  if (request.body.sendEmail ?? true) sendSignupConfirmationMail(updatedSignup, "edit", true);
+  if (request.body.sendEmail ?? true) await sendSignupConfirmationMail(updatedSignup, "edit", true);
 
   reply.status(200);
   return formatSignupForAdmin(updatedSignup);
@@ -409,6 +460,7 @@ export async function createSignupAsAdmin(
           ],
         },
       ],
+      order: [[Event, Question, "order", "ASC"]],
       transaction,
     });
     if (!quota || !quota.event) throw new NoSuchQuota("Quota doesn't exist.");
@@ -425,7 +477,7 @@ export async function createSignupAsAdmin(
   // gets a status on their signup before it being returned.
   await refreshSignupPositions(updatedSignup.quota!.event!).catch((error) => console.error(error));
 
-  if (request.body.sendEmail ?? true) sendSignupConfirmationMail(updatedSignup, "signup", true);
+  if (request.body.sendEmail ?? true) await sendSignupConfirmationMail(updatedSignup, "signup", true);
 
   reply.status(200);
   return formatSignupForAdmin(updatedSignup);

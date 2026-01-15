@@ -68,6 +68,7 @@ const blankSignup = {
   lastName: "",
   email: "",
   answers: [],
+  manualPaymentStatus: null,
 } satisfies Partial<EditorSignup>;
 
 /* eslint-disable no-param-reassign -- immer in use */

@@ -1,8 +1,9 @@
 import dotenvFlow from "dotenv-flow";
 import path from "path";
 
+import { stripeBrandingSchema } from "./configSchemas";
 import i18n, { i18nResources, knownLanguages } from "./i18n";
-import { envBoolean, envEnum, envInteger, envString, frontendFilesPath } from "./util/config";
+import { envBoolean, envEnum, envInteger, envJson, envString, frontendFilesPath } from "./util/config";
 
 // Vite/Vitest sets BASE_URL. This conflicts with our config, but isn't used
 // in tests, so just overwrite it.
@@ -57,22 +58,22 @@ const config = {
   /** Version number added as a header to responses. */
   version: envString("VERSION", null),
 
-  /** ClearDB connection string. */
+  /** @deprecated Only used to detect outdated configs. */
   clearDbUrl: envString("CLEARDB_DATABASE_URL", null),
-  /** `mysql` and `postgres` are supported. */
-  dbDialect: envString("DB_DIALECT", null),
+  /** @deprecated Only used to detect outdated configs. */
+  dbDialect: envString("DB_DIALECT", "postgres"),
   /** Hostname for the database. */
-  dbHost: envString("DB_HOST", null),
+  dbHost: envString("DB_HOST"),
   /** Port for the database. */
   dbPort: envInteger("DB_PORT", null),
   /** Whether to use SSL for the database. */
   dbSsl: envBoolean("DB_SSL", false),
   /** Username for the database. */
-  dbUser: envString("DB_USER", null),
+  dbUser: envString("DB_USER"),
   /** Password for the database. */
   dbPassword: envString("DB_PASSWORD", null),
   /** Database name. */
-  dbDatabase: envString("DB_DATABASE", null),
+  dbDatabase: envString("DB_DATABASE"),
   /** Required to run tests, as they reset the test database for every test. */
   allowTestsToResetDb: envBoolean("THIS_IS_A_TEST_DB_AND_CAN_BE_WIPED", false),
 
@@ -120,6 +121,13 @@ const config = {
    * @example "http://example.com/signup/{id}/{editToken}"
    */
   editSignupUrl: envString("EDIT_SIGNUP_URL", `${envString("BASE_URL")}/signup/{id}/{editToken}`),
+  /** URL template for a signup payment completion page. Used for payments. Contains `{id}` and `{editToken}`, may contain `{lang}`.
+   *
+   * This is intended for custom frontends; the default is for the frontend included in the repo.
+   *
+   * @example "http://example.com/payment/{id}/{editToken}"
+   */
+  completePaymentUrl: envString("COMPLETE_PAYMENT_URL", `${envString("BASE_URL")}/payment/{id}/{editToken}`),
   /** URL template for the admin main page. Used for emails. May contain `{lang}`.
    *
    * This is intended for custom frontends; the default is for the frontend included in the repo.
@@ -159,10 +167,25 @@ const config = {
 
   /** The currency used for payments. */
   currency: envString("CURRENCY", "EUR"),
+
+  /** Stripe secret key for payment processing. */
+  stripeSecretKey: envString("STRIPE_SECRET_KEY", null),
+  /** Stripe webhook signing secret for verifying webhook events. */
+  stripeWebhookSecret: envString("STRIPE_WEBHOOK_SECRET", null),
+  /** How long (in minutes) before a Stripe Checkout Session expires. Default: 30 minutes. */
+  stripeCheckoutExpiryMins: envInteger("STRIPE_CHECKOUT_EXPIRY_MINS", 30),
+  /** Stripe branding customization. */
+  stripeBranding: envJson("STRIPE_BRANDING_JSON", stripeBrandingSchema, {}),
 } as const;
 
 if (!process.env.PORT && config.nodeEnv === "production") {
   throw new Error("Env variable PORT must be set in production");
+}
+
+if (config.clearDbUrl || config.dbDialect !== "postgres") {
+  throw new Error(
+    "Only PostgreSQL is supported by Ilmomasiina 3.0. MySQL migration tools will be provided in a future Ilmomasiina 2.x version.",
+  );
 }
 
 if (config.frontendFilesPath === null) {
@@ -189,11 +212,7 @@ if (config.oldEditTokenSalt === config.newEditTokenSecret) {
   );
 }
 
-try {
-  // Node only supports URL.canParse since 18.17.0
-  // eslint-disable-next-line no-new
-  new URL(config.baseUrl);
-} catch (err) {
+if (!URL.canParse(config.baseUrl)) {
   throw new Error("BASE_URL is invalid - make sure it is a full URL like http://example.com.");
 }
 
@@ -203,6 +222,14 @@ if (!config.eventDetailsUrl.includes("{slug}")) {
 
 if (!config.editSignupUrl.includes("{id}") || !config.editSignupUrl.includes("{editToken}")) {
   throw new Error("EDIT_SIGNUP_URL must contain {id} and {editToken} if set.");
+}
+
+if (config.stripeCheckoutExpiryMins < 30 || config.stripeCheckoutExpiryMins > 1440) {
+  throw new Error("STRIPE_CHECKOUT_EXPIRY_MINS must be between 30 and 1440 (24 hours).");
+}
+
+if (config.stripeSecretKey && !config.stripeWebhookSecret) {
+  console.warn("STRIPE_WEBHOOK_SECRET is not configured - ignoring webhooks.");
 }
 
 i18n.init({
@@ -227,6 +254,13 @@ export function eventDetailsUrl({ slug, lang }: { slug: string; lang: string }) 
 
 export function editSignupUrl({ id, editToken, lang }: { id: string; editToken: string; lang: string }) {
   return config.editSignupUrl
+    .replace(/\{id\}/g, id)
+    .replace(/\{editToken\}/g, editToken)
+    .replace(/\{lang\}/g, lang);
+}
+
+export function completePaymentUrl({ id, editToken, lang }: { id: string; editToken: string; lang: string }) {
+  return config.completePaymentUrl
     .replace(/\{id\}/g, id)
     .replace(/\{editToken\}/g, editToken)
     .replace(/\{lang\}/g, lang);

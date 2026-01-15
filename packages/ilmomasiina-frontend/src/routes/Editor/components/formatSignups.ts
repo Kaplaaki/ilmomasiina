@@ -24,6 +24,8 @@ export function getAnswersFromSignup(event: AdminEventResponse, signup: AdminSig
 export function getSignupsForAdminList(event: AdminEventResponse): AdminSignupWithQuota[] {
   const signupsArray = getSignupsAsList(event);
   return orderBy(signupsArray, [
+    // Deleted signups go last
+    (signup) => (signup.deletedAt ? 1 : 0),
     (signup) => [SignupStatus.IN_QUOTA, SignupStatus.IN_OPEN_QUOTA, SignupStatus.IN_QUEUE, null].indexOf(signup.status),
     "createdAt",
   ]);
@@ -90,7 +92,11 @@ export function useConvertSignupsToCSV(
         ...event.questions.map(({ question }) => question),
         t("editor.signups.column.time"),
         ...(event.payments !== PaymentMode.DISABLED
-          ? [t("editor.signups.column.price"), t("editor.signups.column.currency")]
+          ? [
+              t("editor.signups.column.price"),
+              t("editor.signups.column.currency"),
+              t("editor.signups.column.paymentStatus"),
+            ]
           : []),
       ],
       // Data rows
@@ -107,7 +113,11 @@ export function useConvertSignupsToCSV(
           ...event.questions.map((question) => stringifyAnswer(answerMap[question.id])),
           dateFormat.format(new Date(signup.createdAt)),
           ...(event.payments !== PaymentMode.DISABLED
-            ? [signup.price != null ? (signup.price / 100).toFixed(2) : "", signup.currency || ""]
+            ? [
+                signup.price != null ? (signup.price / 100).toFixed(2) : "",
+                signup.currency || "",
+                signup.paymentStatus ? t(`editor.signups.column.paymentStatus.${signup.paymentStatus}`) : "",
+              ]
             : []),
         ];
       }),

@@ -4,20 +4,18 @@ import moment from "moment";
 import { describe, expect, test } from "vitest";
 
 import {
-  AdminEventListResponse,
-  AdminEventResponse,
   AuditEvent,
   EventCreateBody,
   EventUpdateBody,
   PaymentMode,
   QuestionType,
+  SignupPaymentStatus,
 } from "@tietokilta/ilmomasiina-models";
 import { AuditLog } from "../../src/models/auditlog";
 import { Event } from "../../src/models/event";
 import { Question } from "../../src/models/question";
 import { Quota } from "../../src/models/quota";
 import { toDate } from "../../src/routes/utils";
-import { handleTestResponse } from "../requests";
 import {
   fetchSignups,
   testEvent,
@@ -26,53 +24,7 @@ import {
   testQuestionPrices,
   testSignups,
 } from "../testData";
-
-async function fetchAdminEventList() {
-  const response = await server.inject({
-    method: "GET",
-    url: "/api/admin/events",
-    headers: { authorization: adminToken },
-  });
-  return handleTestResponse<AdminEventListResponse>(response);
-}
-
-async function fetchAdminEventDetails(event: Pick<Event, "id">) {
-  const response = await server.inject({
-    method: "GET",
-    url: `/api/admin/events/${event.id}`,
-    headers: { authorization: adminToken },
-  });
-  return handleTestResponse<AdminEventResponse>(response);
-}
-
-async function createEvent(body: EventCreateBody) {
-  const response = await server.inject({
-    method: "POST",
-    url: "/api/admin/events",
-    body,
-    headers: { authorization: adminToken },
-  });
-  return handleTestResponse<AdminEventResponse>(response);
-}
-
-async function updateEvent(event: Pick<Event, "id">, body: EventUpdateBody) {
-  const response = await server.inject({
-    method: "PATCH",
-    url: `/api/admin/events/${event.id}`,
-    body,
-    headers: { authorization: adminToken },
-  });
-  return handleTestResponse<AdminEventResponse>(response);
-}
-
-async function deleteEvent(event: Pick<Event, "id">) {
-  const response = await server.inject({
-    method: "DELETE",
-    url: `/api/admin/events/${event.id}`,
-    headers: { authorization: adminToken },
-  });
-  return [null, response] as const;
-}
+import { createEvent, deleteEvent, fetchAdminEventDetails, fetchAdminEventList, updateEvent } from "./api";
 
 describe("GET /api/admin/events/:id", () => {
   test("returns event information", async () => {
@@ -213,6 +165,9 @@ describe("GET /api/admin/events/:id", () => {
         currency: firstSignup.currency,
         status: null,
         position: null,
+        paymentStatus: SignupPaymentStatus.PENDING,
+        manualPaymentStatus: null,
+        deletedAt: null,
       });
 
       const foundSignup = found!.signups.find((signup) => signup.id === firstSignup.id);
@@ -381,7 +336,13 @@ describe("POST /api/admin/events", () => {
 
     expect(createResponse.statusCode).toBe(201);
 
-    const event = await Event.findByPk(createBody.id, { include: [Question, Quota] });
+    const event = await Event.findByPk(createBody.id, {
+      include: [Question, Quota],
+      order: [
+        [Question, "order", "ASC"],
+        [Quota, "order", "ASC"],
+      ],
+    });
     expect(event).toBeTruthy();
     expect(event!.title).toBe(postBody.title);
     expect(event!.slug).toBe(postBody.slug);
@@ -629,7 +590,10 @@ describe("POST /api/admin/events", () => {
 
     expect(createResponse.statusCode).toBe(201);
 
-    const event = await Event.findByPk(createBody.id, { include: [Question, Quota] });
+    const event = await Event.findByPk(createBody.id, {
+      include: [Question, Quota],
+      order: [[Question, "order", "ASC"]],
+    });
 
     expect(event!.questions).toHaveLength(5);
     // type: TEXT always has options: null + prices: null

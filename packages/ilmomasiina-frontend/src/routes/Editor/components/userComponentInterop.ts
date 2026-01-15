@@ -1,4 +1,10 @@
-import { SignupForEdit, SignupStatus, UserEventResponse } from "@tietokilta/ilmomasiina-models";
+import {
+  PaymentMode,
+  SignupForEdit,
+  SignupPaymentStatus,
+  SignupStatus,
+  UserEventResponse,
+} from "@tietokilta/ilmomasiina-models";
 import { editorEventToServer } from "../../../modules/editor/selectors";
 import type { EditorEvent } from "../../../modules/editor/types";
 
@@ -46,15 +52,18 @@ export const previewDummySignup = (event: UserEventResponse): SignupForEdit => (
   position: 1,
   confirmableForMillis: 30 * 60 * 60 * 1000,
   editableForMillis: 30 * 60 * 60 * 1000,
-  price: event.quotas[0]?.price ?? 0,
+  price: event.payments !== PaymentMode.DISABLED ? (event.quotas[0]?.price ?? 0) : 0,
   currency: CURRENCY,
-  products: event.quotas[0]
-    ? [
-        {
-          name: event.quotas[0].title,
-          unitPrice: event.quotas[0].price,
-          amount: 1,
-        },
-      ]
-    : [],
+  products:
+    event.payments !== PaymentMode.DISABLED && event.quotas[0]
+      ? [
+          {
+            name: event.quotas[0].title,
+            unitPrice: event.quotas[0].price,
+            amount: 1,
+          },
+        ]
+      : [],
+  paymentStatus: SignupPaymentStatus.PENDING,
+  deletedAt: null,
 });

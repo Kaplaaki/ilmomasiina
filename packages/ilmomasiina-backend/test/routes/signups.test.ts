@@ -1,34 +1,19 @@
 import { testEvent, testSignups } from "test/testData";
 import { describe, expect, test } from "vitest";
 
-import { EDIT_TOKEN_HEADER, SignupForEditResponse } from "@tietokilta/ilmomasiina-models";
-import config from "../../src/config";
-import { Signup } from "../../src/models/signup";
+import { PaymentMode, SignupPaymentStatus } from "@tietokilta/ilmomasiina-models";
 import { refreshSignupPositionsAndGet } from "../../src/routes/signups/computeSignupPosition";
 import { generateToken } from "../../src/routes/signups/editTokens";
-import { handleTestResponse } from "../requests";
-
-async function fetchSignupForEdit(signup: Signup, editToken?: string | false) {
-  const headers: Record<string, string> = {};
-  if (editToken !== false) {
-    headers[EDIT_TOKEN_HEADER] = editToken ?? generateToken(signup.id);
-  }
-  const response = await server.inject({
-    method: "GET",
-    url: `/api/signups/${signup.id}`,
-    headers,
-  });
-  return handleTestResponse<SignupForEditResponse>(response);
-}
+import * as api from "./api";
 
 describe("getSignupForEdit", () => {
   test("returns signup for editing", async () => {
-    const event = await testEvent();
+    const event = await testEvent({}, { payments: PaymentMode.ONLINE });
     const [signup] = await testSignups(event, { count: 1, confirmed: true });
     const quota = await signup.getQuota();
     const answers = await signup.getAnswers();
 
-    const [data, response] = await fetchSignupForEdit(signup);
+    const [data, response] = await api.fetchSignupForEdit(signup.id);
 
     expect(response.statusCode).toBe(200);
 
@@ -53,9 +38,11 @@ describe("getSignupForEdit", () => {
         status: null,
         confirmableForMillis: 0,
         editableForMillis: expect.any(Number),
-        price: expect.any(Number),
-        currency: config.currency,
-        products: expect.any(Array),
+        price: signup.price,
+        currency: signup.currency,
+        products: signup.products,
+        paymentStatus: SignupPaymentStatus.PENDING,
+        deletedAt: null,
       },
     });
   });
@@ -64,7 +51,7 @@ describe("getSignupForEdit", () => {
     const event = await testEvent();
     const [signup] = await testSignups(event, { count: 1, confirmed: false });
 
-    const [data] = await fetchSignupForEdit(signup);
+    const [data] = await api.fetchSignupForEdit(signup.id);
 
     expect(data).toMatchObject({
       signup: {
@@ -82,7 +69,7 @@ describe("getSignupForEdit", () => {
     const signup = signups[0]; // created in random order, so this suffices
     const status = await refreshSignupPositionsAndGet(event, signup.id);
 
-    const [data] = await fetchSignupForEdit(signup);
+    const [data] = await api.fetchSignupForEdit(signup.id);
 
     expect(data.signup.status).toEqual(status.status);
     expect(data.signup.position).toEqual(status.position);
@@ -98,11 +85,11 @@ describe("getSignupForEdit", () => {
       confirmed: true,
     });
 
-    let [data, response] = await fetchSignupForEdit(signup, false);
+    let [data, response] = await api.fetchSignupForEdit(signup.id, false);
     expect(response.statusCode).toBe(403);
     expect(data.signup).toBe(undefined);
 
-    [data, response] = await fetchSignupForEdit(signup, generateToken(other.id));
+    [data, response] = await api.fetchSignupForEdit(signup.id, generateToken(other.id));
     expect(response.statusCode).toBe(403);
     expect(data.signup).toBe(undefined);
   });

@@ -207,7 +207,7 @@
     "editor.basic.signupsPublic.check": "Ilmoittautumiset ovat julkisia",
     "editor.basic.signupsPublic.info": "Ilmoittautuja saa päättää, näkyykö hänen nimensä julkisesti. Vastaukset julkisiin kysymyksiin ovat aina julkisia.",
     "editor.basic.payments": "Maksut",
-    "editor.basic.payments.disabled": "Ei maksuja Ilmomasiinanassa",
+    "editor.basic.payments.disabled": "Ei maksuja Ilmomasiinassa",
     "editor.basic.payments.manual": "Laske hinnat, vastaanota maksut käsin",
     "editor.basic.payments.online": "Vastaanota maksut Ilmomasiinassa",
     "editor.quotas.addQuota": "Lisää kiintiö",
@@ -267,6 +267,10 @@
     "editor.signups.column.status.in-queue": "Jonossa",
     "editor.signups.column.time": "Ilmoittautumisaika",
     "editor.signups.column.price": "Hinta",
+    "editor.signups.column.paymentStatus": "Maksu",
+    "editor.signups.column.paymentStatus.pending": "Odottaa",
+    "editor.signups.column.paymentStatus.paid": "Maksettu",
+    "editor.signups.column.paymentStatus.refunded": "Palautettu",
     "editor.signups.column.currency": "Valuutta",
     "editor.signups.column.actions": "Toiminnot",
     "editor.signups.action.edit": "Muokkaa",
@@ -274,6 +278,7 @@
     "editor.signups.action.delete.confirm": "Oletko varma? Poistamista ei voi perua.",
     "editor.signups.action.create": "Lisää ilmoittautuminen",
     "editor.signups.unconfirmed": "Vahvistamatta",
+    "editor.signups.deleted": "Poistettu",
     "editor.editConflict.title": "Päällekkäinen muokkaus",
     "editor.editConflict.info1": "Toinen käyttäjä tai välilehti on muokannut tätä tapahtumaa <1>{{time}}</1>.",
     "editor.editConflict.info1.withDeleted": "Toinen käyttäjä tai välilehti on muokannut tätä tapahtumaa <1>{{time}}</1> ja poistanut seuraavat kiintiöt tai kysymykset:",
@@ -301,6 +306,8 @@
     "editor.editSignup.action.save": "Tallenna",
     "editor.editSignup.error.NoSuchSignup.description": "Ilmoittautumista ei löytynyt. Se saattaa olla jo poistettu.",
     "editor.editSignup.error.default.description": "Ilmoittautumisen tallentaminen epäonnistui.",
-    "editor.editSignup.success": "Ilmoittautuminen tallennettu."
+    "editor.editSignup.success": "Ilmoittautuminen tallennettu.",
+    "editor.editSignup.priceChangeWarning": "Jos muutat jo maksetun ilmoittautumisen hintaa, mahdollinen lisämaksu tai hyvitys pitää hoitaa manuaalisesti.",
+    "editor.saveSignupError.PaymentInProgress.description": "Maksutapahtuma on käynnissä. Kokeile hetken kuluttua uudestaan."
   }
 }

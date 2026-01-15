@@ -205,8 +205,7 @@ const BasicDetailsTab = () => {
           options={[
             [PaymentMode.DISABLED, t("editor.basic.payments.disabled")],
             [PaymentMode.MANUAL, t("editor.basic.payments.manual")],
-            // TODO: enable when online payments are implemented
-            // [PaymentMode.ONLINE, t("editor.basic.payments.online")],
+            [PaymentMode.ONLINE, t("editor.basic.payments.online")],
           ]}
           formatError={formatError}
         />
