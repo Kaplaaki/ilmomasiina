@@ -476,6 +476,9 @@ export async function createSignupAsAdmin(
   // gets a status on their signup before it being returned.
   await refreshSignupPositions(updatedSignup.quota!.event!).catch((error) => console.error(error));
 
+  // Fetch updated payment data for response. (Should always be empty, but for consistency.)
+  updatedSignup.payments = await updatedSignup.getPayments();
+
   if (request.body.sendEmail ?? true) await sendSignupConfirmationMail(updatedSignup, "signup", true);
 
   reply.status(200);
