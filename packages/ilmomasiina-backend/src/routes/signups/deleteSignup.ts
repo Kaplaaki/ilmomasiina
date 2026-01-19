@@ -13,7 +13,7 @@ import { NoSuchSignup, SignupsClosed } from "./errors";
 
 /** Requires admin authentication OR editTokenVerification */
 async function deleteSignup(id: string, auditLogger: AuditLogger, admin: boolean = false): Promise<void> {
-  await expireExistingPaymentsForSignupUpdate(id, admin);
+  await expireExistingPaymentsForSignupUpdate(id);
 
   const event = await getSequelize().transaction(async (transaction) => {
     const signup = await Signup.scope("active").findByPk(id, {
