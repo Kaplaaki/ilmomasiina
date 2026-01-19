@@ -58,7 +58,7 @@ const EditSignupModalBody = ({ handleSubmit, submitting }: FormRenderProps<Signu
       <Modal.Body>
         {isNew && <FieldRow name="quotaId" as={QuotaField} label={t("editor.editSignup.quota")} required />}
         <CommonFields canEdit canEditNameAndEmail />
-        <QuestionFields name="answers" canEdit />
+        <QuestionFields name="answers" canEdit validate={false} />
         <FieldRow
           name="sendEmail"
           as={BsForm.Check}
