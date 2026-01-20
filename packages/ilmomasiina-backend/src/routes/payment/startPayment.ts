@@ -29,6 +29,18 @@ import {
 } from "./errors";
 import { createCheckoutSession, getStripe, refreshCheckoutSession } from "./stripe";
 
+function validateSignupStatusForPayment(signup: Signup) {
+  if (!signup.confirmedAt) {
+    throw new SignupNotConfirmed("Signup must be confirmed before payment");
+  }
+  if (!signup.hasPrice) {
+    throw new PaymentNotRequired("This signup does not require payment");
+  }
+  if (signup.status !== SignupStatus.IN_QUOTA && signup.status !== SignupStatus.IN_OPEN_QUOTA) {
+    throw new SignupInQueue("Cannot pay while in queue");
+  }
+}
+
 /** Create a new Payment and Stripe checkout session from the given signup. */
 async function createPayment(signupId: SignupID): Promise<string> {
   const expiresAt = moment().add(config.stripeCheckoutExpiryMins, "minutes");
@@ -50,16 +62,8 @@ async function createPayment(signupId: SignupID): Promise<string> {
         throw new NoSuchSignup("Signup not found");
       }
 
-      // Revalidate signup state
-      if (!freshSignup.confirmedAt) {
-        throw new SignupNotConfirmed("Signup must be confirmed before payment");
-      }
-      if (!freshSignup.hasPrice) {
-        throw new PaymentNotRequired("This signup does not require payment");
-      }
-      if (freshSignup.status !== SignupStatus.IN_QUOTA && freshSignup.status !== SignupStatus.IN_OPEN_QUOTA) {
-        throw new SignupInQueue("Cannot pay while in queue");
-      }
+      // Revalidate signup state now that we have the lock, to avoid race conditions
+      validateSignupStatusForPayment(freshSignup);
 
       // Create Payment with fresh data
       const newPayment = await Payment.create(
@@ -159,19 +163,11 @@ async function getOrCreatePayment(signupId: SignupID): Promise<string> {
     throw new NoSuchSignup("Signup not found");
   }
 
-  // Validate signup state
-  if (!signup.confirmedAt) {
-    throw new SignupNotConfirmed("Signup must be confirmed before payment");
-  }
-  if (!signup.hasPrice) {
-    throw new PaymentNotRequired("This signup does not require payment");
-  }
+  // Validate signup state to avoid taking the lock unnecessarily - will be revalidated by createPayment() when locked
   if (signup.quota.event.payments !== PaymentMode.ONLINE) {
     throw new OnlinePaymentsDisabled("Online payments are not enabled for this event");
   }
-  if (signup.status !== SignupStatus.IN_QUOTA && signup.status !== SignupStatus.IN_OPEN_QUOTA) {
-    throw new SignupInQueue("Cannot pay while in queue");
-  }
+  validateSignupStatusForPayment(signup);
 
   if (!signup.activePayment) {
     // No active payment - create a new one. Throws 409 in case requests race.
