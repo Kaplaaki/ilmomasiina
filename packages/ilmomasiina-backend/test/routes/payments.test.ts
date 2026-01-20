@@ -107,12 +107,13 @@ async function defaultTestEventAndSignup() {
     },
     { payments: PaymentMode.ONLINE, nameQuestion: true, emailQuestion: true },
   );
-  const [signup] = await testSignups(
+  const [signup] = await testSignups({
     event,
-    { count: 1, confirmed: true },
-    { namePublic: false, language: "en" },
-    { [event.questions![0].id]: "Option A" },
-  );
+    count: 1,
+    confirmed: true,
+    overrides: { namePublic: false, language: "en" },
+    answers: { [event.questions![0].id]: "Option A" },
+  });
   // Refresh positions to ensure signup has a valid status (required for queue validation)
   await refreshSignupPositions(event);
   await signup.reload();
@@ -286,7 +287,7 @@ describe("startPayment", () => {
 
   test("fails when signup is not confirmed", async () => {
     const { event } = await defaultTestEventAndSignup();
-    const [signup] = await testSignups(event, { count: 1, confirmed: false });
+    const [signup] = await testSignups({ event, count: 1, confirmed: false });
 
     const result = await api.startPayment(signup.id);
     expect(result).toBeApiError(400, ErrorCode.SIGNUP_NOT_CONFIRMED);
@@ -313,16 +314,13 @@ describe("startPayment", () => {
     await event.quotas![1].update({ price: 1000 }); // Make only one quota paid
 
     // Create a free signup
-    const [signup] = await testSignups(
+    const [signup] = await testSignups({
       event,
-      {
-        count: 1,
-        confirmed: true,
-        quotaId: event.quotas![0].id,
-      },
-      undefined,
-      { [event.questions![0].id]: "Free Option" },
-    );
+      count: 1,
+      confirmed: true,
+      overrides: { quotaId: event.quotas![0].id },
+      answers: { [event.questions![0].id]: "Free Option" },
+    });
     expect(signup.price).toBe(0);
 
     // Attempt to start payment - should fail
@@ -358,8 +356,8 @@ describe("startPayment", () => {
     );
 
     // Create two signups, first to fill the quota, then to place another in queue
-    await testSignups(event, { count: 1, confirmed: true });
-    const [queuedSignup] = await testSignups(event, { count: 1, confirmed: true });
+    await testSignups({ event, count: 1, confirmed: true });
+    const [queuedSignup] = await testSignups({ event, count: 1, confirmed: true });
 
     // Refresh positions to assign statuses
     await refreshSignupPositions(event);
@@ -430,7 +428,7 @@ describe("startPayment", () => {
       { quotaCount: 1, questionCount: 0 },
       { payments: PaymentMode.ONLINE, nameQuestion: true, emailQuestion: true },
     );
-    const signups = await testSignups(event, { count: 5, confirmed: true });
+    const signups = await testSignups({ event, count: 5, confirmed: true });
     await refreshSignupPositions(event);
 
     // Create payments for all signups concurrently
@@ -821,15 +819,12 @@ describe("payment and signup update locking", () => {
       },
       { payments: PaymentMode.ONLINE, nameQuestion: true, emailQuestion: true },
     );
-    const [signup] = await testSignups(
+    const [signup] = await testSignups({
       event,
-      {
-        count: 1,
-        confirmed: true,
-      },
-      undefined,
-      { [event.questions![0].id]: "Option A" },
-    );
+      count: 1,
+      confirmed: true,
+      answers: { [event.questions![0].id]: "Option A" },
+    });
     expect(signup.price).toBe(1700);
 
     await refreshSignupPositions(event);
