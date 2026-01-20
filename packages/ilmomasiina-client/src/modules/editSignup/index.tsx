@@ -67,6 +67,7 @@ export function useEditSignupState({ id, editToken, paid, language }: EditSignup
         editingClosedOnLoad,
         confirmableUntil: now + response.signup.confirmableForMillis,
         editableUntil: now + response.signup.editableForMillis,
+        isNew,
 
         // Show payment if there's a price to pay.
         showPayment: response.signup.price != null && response.signup.price > 0,
