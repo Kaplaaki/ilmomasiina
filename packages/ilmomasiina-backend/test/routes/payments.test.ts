@@ -791,6 +791,7 @@ describe("payment and signup update locking", () => {
     mockStripeCheckoutSessionExpire.mockRejectedValueOnce(
       new Stripe.errors.StripeInvalidRequestError({ type: "invalid_request_error" }),
     );
+    consoleError.mockImplementation(() => {}); // Suppress expected error log
 
     // Update signup - should fail because payment couldn't be expired
     const result = await api.updateSignupAsUser(signup.id, {
@@ -802,6 +803,8 @@ describe("payment and signup update locking", () => {
     expect(result).toBeApiError(409, ErrorCode.PAYMENT_IN_PROGRESS);
     expect(mockStripeCheckoutSessionExpire).toHaveBeenCalledOnce();
     expect(mockStripeCheckoutSessionCreate).toHaveBeenCalledOnce(); // No new payment created
+
+    expect(consoleError).toHaveBeenCalled(); // Error was logged
   });
 
   test("end-to-end: update to expire payment, then pay again", async () => {
