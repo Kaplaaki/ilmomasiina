@@ -3,7 +3,7 @@ import { DatabaseError as PgDatabaseError } from "pg";
 import { DatabaseError, Transaction } from "sequelize";
 import Stripe from "stripe";
 
-import { PaymentStatus } from "@tietokilta/ilmomasiina-models";
+import { PaymentStatus, SignupID } from "@tietokilta/ilmomasiina-models";
 import config, { completePaymentUrl } from "../../config";
 import { sendPaymentConfirmationMail } from "../../mail/signupConfirmation";
 import { Payment } from "../../models/payment";
@@ -218,7 +218,7 @@ export async function expirePaymentForSignupUpdate(payment: Payment): Promise<vo
  * Errors from concurrent state changes are ignored. This function is only best-effort; the actual
  * check for conflicting payments is done in updateExistingSignup() once a lock is held.
  */
-export async function expireExistingPaymentsForSignupUpdate(signupId: string): Promise<void> {
+export async function expireExistingPaymentsForSignupUpdate(signupId: SignupID): Promise<void> {
   // Find any active payments
   const activePayments = await Payment.scope("active").findAll({
     where: { signupId },
