@@ -297,8 +297,8 @@ export async function testSignups(
   // Add signup IDs to answers and create them.
   // (Note: This would not work in MySQL, since it doesn't return us the IDs from Signup.bulkCreate.)
   await Answer.bulkCreate(
-    answerValues.flatMap((answers, i) =>
-      answers.map((ans) => ({
+    answerValues.flatMap((answersForSignup, i) =>
+      answersForSignup.map((ans) => ({
         ...ans,
         signupId: signups[i].id,
       })),

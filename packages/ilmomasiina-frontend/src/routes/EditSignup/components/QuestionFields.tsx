@@ -18,11 +18,10 @@ import useFieldErrors from "./fieldError";
 type QuestionFieldProps = {
   name: string;
   question: Question;
-  disabled?: boolean;
   validate?: boolean;
 };
 
-const QuestionField = ({ name, question, disabled, validate = true }: QuestionFieldProps) => {
+const QuestionField = ({ name, question, validate = true }: QuestionFieldProps) => {
   const {
     input: { value, onChange },
     meta: { invalid },
@@ -30,6 +29,7 @@ const QuestionField = ({ name, question, disabled, validate = true }: QuestionFi
   const currentAnswerString = stringifyAnswer(value);
   const currentAnswerArray = useMemo(() => (Array.isArray(value) ? value : []), [value]);
 
+  const { canEdit, canEditPaidQuestions, signup } = useEditSignupContext();
   const { t } = useTranslation();
   const formatError = useFieldErrors();
 
@@ -40,10 +40,12 @@ const QuestionField = ({ name, question, disabled, validate = true }: QuestionFi
   const formatPrice = usePriceFormatter();
   // Show the prices for each option if the question has some paid options.
   // Add a + sign if the signup has a "base price" from the quota.
-  const quotaHasPrice = useEditSignupContext().signup!.quota.price > 0;
+  const quotaHasPrice = signup!.quota.price > 0;
   const hasPrices = questionHasPrices(question);
   const formatOptionPrice = (price?: number) =>
     hasPrices && price != null ? ` (${quotaHasPrice ? "+" : ""}${formatPrice(price)})` : "";
+
+  const disabled = !canEdit || (!canEditPaidQuestions && questionHasPrices(question));
 
   // We need to wrap onChange, as react-final-form complains if we pass radios to it without type="radio".
   // If we pass type="radio", it doesn't provide us with the value of the field.
@@ -57,7 +59,13 @@ const QuestionField = ({ name, question, disabled, validate = true }: QuestionFi
     onChange(newAnswers);
   });
 
-  const help = question.public ? t("editSignup.publicQuestion") : null;
+  const help =
+    // eslint-disable-next-line no-nested-ternary
+    canEdit && disabled // implies question is uneditable because of !canEditPaidQuestions
+      ? t("editSignup.uneditablePaidQuestion")
+      : question.public
+        ? t("editSignup.publicQuestion")
+        : null;
 
   let input: ReactNode;
   let isCheckboxes = false;
@@ -185,16 +193,15 @@ const QuestionField = ({ name, question, disabled, validate = true }: QuestionFi
 
 type Props = {
   name: string;
-  canEdit: boolean;
   validate?: boolean;
 };
 
-const QuestionFields = ({ name, canEdit, validate = true }: Props) => {
+const QuestionFields = ({ name, validate = true }: Props) => {
   const { localizedEvent: event } = useEditSignupContext();
   return (
     <>
       {event!.questions.map((question) => (
-        <QuestionField key={question.id} name={name} question={question} disabled={!canEdit} validate={validate} />
+        <QuestionField key={question.id} name={name} question={question} validate={validate} />
       ))}
     </>
   );

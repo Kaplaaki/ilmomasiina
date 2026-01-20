@@ -133,6 +133,7 @@ export class Signup extends Model<SignupAttributes, SignupCreationAttributes> im
   public static readonly MAX_NAME_LENGTH = 255;
   public static readonly MAX_EMAIL_LENGTH = 255; // TODO
 
+  /** Gets whether this signup has been confirmed (i.e. filled in after creation). */
   public get confirmed(): boolean {
     return this.confirmedAt != null;
   }
