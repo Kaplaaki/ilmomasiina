@@ -9,6 +9,7 @@ import {
   PaymentStatus,
   SignupID,
   SignupPathParams,
+  SignupStatus,
   StartPaymentResponse,
 } from "@tietokilta/ilmomasiina-models";
 import config from "../../config";
@@ -23,6 +24,7 @@ import {
   PaymentInProgress,
   PaymentNotRequired,
   SignupAlreadyPaid,
+  SignupInQueue,
   SignupNotConfirmed,
 } from "./errors";
 import { createCheckoutSession, getStripe, refreshCheckoutSession } from "./stripe";
@@ -54,6 +56,9 @@ async function createPayment(signupId: SignupID): Promise<string> {
       }
       if (!freshSignup.hasPrice) {
         throw new PaymentNotRequired("This signup does not require payment");
+      }
+      if (freshSignup.status !== SignupStatus.IN_QUOTA && freshSignup.status !== SignupStatus.IN_OPEN_QUOTA) {
+        throw new SignupInQueue("Cannot pay while in queue");
       }
 
       // Create Payment with fresh data
@@ -163,6 +168,9 @@ async function getOrCreatePayment(signupId: SignupID): Promise<string> {
   }
   if (signup.quota.event.payments !== PaymentMode.ONLINE) {
     throw new OnlinePaymentsDisabled("Online payments are not enabled for this event");
+  }
+  if (signup.status !== SignupStatus.IN_QUOTA && signup.status !== SignupStatus.IN_OPEN_QUOTA) {
+    throw new SignupInQueue("Cannot pay while in queue");
   }
 
   if (!signup.activePayment) {
