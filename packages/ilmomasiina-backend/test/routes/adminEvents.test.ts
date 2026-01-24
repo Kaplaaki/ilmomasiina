@@ -16,6 +16,7 @@ import { AuditLog } from "../../src/models/auditlog";
 import { Event } from "../../src/models/event";
 import { Question } from "../../src/models/question";
 import { Quota } from "../../src/models/quota";
+import { refreshSignupPositions } from "../../src/routes/signups/computeSignupPosition";
 import { toDate } from "../../src/routes/utils";
 import {
   fetchSignups,
@@ -963,6 +964,7 @@ describe("PATCH /api/admin/events/:id", () => {
   test("checks moving signups to queue", async () => {
     const event = await testEvent({ quotaCount: 1, quotaOverrides: { size: 3 } }, { openQuotaSize: 3 });
     await testSignups({ event, count: 5, confirmed: true });
+    await refreshSignupPositions(event);
 
     const [before] = await fetchAdminEventDetails(event);
     let { updatedAt } = before;
