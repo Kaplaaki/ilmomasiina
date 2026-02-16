@@ -56,6 +56,7 @@ export interface EventAttributes extends EventPerLanguageAttributes {
   nameQuestion: boolean;
   emailQuestion: boolean;
   payments: PaymentMode;
+  preferredFrontend: string;
   languages: Record<string, EventLanguage>;
   defaultLanguage: string;
   updatedAt: Date;
@@ -82,6 +83,7 @@ export interface EventCreationAttributes extends Optional<
   | "nameQuestion"
   | "emailQuestion"
   | "verificationEmail"
+  | "preferredFrontend"
   | "languages"
   | "defaultLanguage"
 > {}
@@ -113,6 +115,7 @@ export class Event extends Model<EventManualAttributes, EventCreationAttributes>
   public emailQuestion!: boolean;
   public verificationEmail!: string | null;
   public payments!: PaymentMode;
+  public preferredFrontend!: string;
   public languages!: Record<string, EventLanguage>;
   public defaultLanguage!: string;
 
@@ -292,6 +295,11 @@ export default function setupEventModel(sequelize: Sequelize) {
         type: DataTypes.ENUM(...Object.values(PaymentMode)),
         allowNull: false,
         defaultValue: PaymentMode.DISABLED,
+      },
+      preferredFrontend: {
+        type: DataTypes.STRING,
+        allowNull: false,
+        defaultValue: "default",
       },
       languages: {
         type: DataTypes.JSON,

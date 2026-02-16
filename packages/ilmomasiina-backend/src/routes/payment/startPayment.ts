@@ -42,7 +42,7 @@ function validateSignupStatusForPayment(signup: Signup) {
 }
 
 /** Create a new Payment and Stripe checkout session from the given signup. */
-async function createPayment(signupId: SignupID): Promise<string> {
+async function createPayment(signupId: SignupID, event: Event): Promise<string> {
   const expiresAt = moment().add(config.stripeCheckoutExpiryMins, "minutes");
   // Stripe requires at least 30 minutes expiry; add some buffer for making the request.
   if (config.stripeCheckoutExpiryMins === 30) expiresAt.add(30, "seconds");
@@ -89,7 +89,7 @@ async function createPayment(signupId: SignupID): Promise<string> {
   // Create checkout session in Stripe (outside transaction - no locks held).
   let session: Stripe.Checkout.Session;
   try {
-    session = await createCheckoutSession(signup, payment);
+    session = await createCheckoutSession(signup, payment, event.preferredFrontend);
   } catch (error) {
     // Mark as failed - user can retry by starting a new payment
     await Payment.update({ status: PaymentStatus.CREATION_FAILED }, { where: { id: payment.id } });
@@ -119,7 +119,7 @@ async function createPayment(signupId: SignupID): Promise<string> {
  * Checks the Stripe session status and either returns the URL (pending) or marks the payment as paid/expired.
  * If expired, creates a new payment.
  */
-async function handlePendingPayment(signupId: SignupID, payment: Payment): Promise<string> {
+async function handlePendingPayment(signupId: SignupID, payment: Payment, event: Event): Promise<string> {
   const session = await refreshCheckoutSession(payment);
 
   switch (session.status!) {
@@ -127,7 +127,7 @@ async function handlePendingPayment(signupId: SignupID, payment: Payment): Promi
       throw new SignupAlreadyPaid("This signup has already been paid");
     case "expired":
       // Try to create a new payment. Throws 409 in case requests race.
-      return createPayment(signupId);
+      return createPayment(signupId, event);
     case "open":
       // Session still valid, return its URL
       return session.url!;
@@ -153,7 +153,7 @@ async function getOrCreatePayment(signupId: SignupID): Promise<string> {
         include: [
           {
             model: Event,
-            attributes: ["payments"],
+            attributes: ["payments", "preferredFrontend"],
           },
         ],
       },
@@ -162,6 +162,7 @@ async function getOrCreatePayment(signupId: SignupID): Promise<string> {
   if (!signup || !signup.quota || !signup.quota.event) {
     throw new NoSuchSignup("Signup not found");
   }
+  const { event } = signup.quota;
 
   // Validate signup state to avoid taking the lock unnecessarily - will be revalidated by createPayment() when locked
   if (signup.quota.event.payments !== PaymentMode.ONLINE) {
@@ -171,7 +172,7 @@ async function getOrCreatePayment(signupId: SignupID): Promise<string> {
 
   if (!signup.activePayment) {
     // No active payment - create a new one. Throws 409 in case requests race.
-    return createPayment(signupId);
+    return createPayment(signupId, event);
   }
 
   const payment = signup.activePayment;
@@ -180,7 +181,7 @@ async function getOrCreatePayment(signupId: SignupID): Promise<string> {
       throw new SignupAlreadyPaid("This signup has already been paid");
 
     case PaymentStatus.PENDING:
-      return handlePendingPayment(signupId, payment);
+      return handlePendingPayment(signupId, payment, event);
 
     case PaymentStatus.CREATING:
       // Another request is creating this payment - race condition.

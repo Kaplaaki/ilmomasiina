@@ -210,6 +210,8 @@
     "editor.basic.payments.disabled": "No payments in Ilmomasiina",
     "editor.basic.payments.manual": "Compute prices, receive payments manually",
     "editor.basic.payments.online": "Receive payments in Ilmomasiina",
+    "editor.basic.preferredFrontend": "Preferred frontend",
+    "editor.basic.preferredFrontend.info": "Links in emails and payments will direct the user to this frontend, regardless of where they signed up.",
     "editor.quotas.addQuota": "Add quota",
     "editor.quotas.deleteQuota": "Delete quota",
     "editor.quotas.quotaName": "Quota name",

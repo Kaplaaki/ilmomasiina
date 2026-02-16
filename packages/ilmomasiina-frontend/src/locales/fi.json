@@ -210,6 +210,8 @@
     "editor.basic.payments.disabled": "Ei maksuja Ilmomasiinassa",
     "editor.basic.payments.manual": "Laske hinnat, vastaanota maksut käsin",
     "editor.basic.payments.online": "Vastaanota maksut Ilmomasiinassa",
+    "editor.basic.preferredFrontend": "Käyttöliittymä",
+    "editor.basic.preferredFrontend.info": "Linkit sähköposteissa ja maksut ohjaavat tähän käyttöliittymään riippumatta siitä, mitä kautta käyttäjä on ilmoittautunut.",
     "editor.quotas.addQuota": "Lisää kiintiö",
     "editor.quotas.deleteQuota": "Poista kiintiö",
     "editor.quotas.quotaName": "Kiintiön nimi",

@@ -1,6 +1,58 @@
 import Stripe from "stripe";
 import z, { ZodType } from "zod";
 
+/** Validation schema for frontend URL configurations. */
+export const frontendsSchema = z.record(
+  z.string().min(1),
+  z.strictObject({
+    /** URL template for an event details page. Used for iCalendar exports. Contains `{slug}`, may contain `{lang}`.
+     *
+     * This is intended for custom frontends; the default is for the frontend included in the repo.
+     *
+     * @example "http://example.com/events/{slug}"
+     */
+    eventDetailsUrl: z
+      .url({ protocol: /^https?/ })
+      .refine((url) => url.includes("{slug}"), { error: "eventDetailsUrl must include {slug}" })
+      .optional(),
+
+    /** URL template for a signup edit page. Used for emails. Contains `{id}` and `{editToken}`, may contain `{lang}`.
+     *
+     * This is intended for custom frontends; the default is for the frontend included in the repo.
+     *
+     * @example "http://example.com/signup/{id}/{editToken}"
+     */
+    editSignupUrl: z
+      .url({ protocol: /^https?/ })
+      .refine((url) => url.includes("{id}"), { error: "editSignupUrl must include {id}" })
+      .refine((url) => url.includes("{editToken}"), { error: "editSignupUrl must include {editToken}" })
+      .optional(),
+
+    /** URL template for a signup payment completion page. Used for payments. Contains `{id}` and `{editToken}`, may contain `{lang}`.
+     *
+     * This is intended for custom frontends; the default is for the frontend included in the repo.
+     *
+     * @example "http://example.com/payment/{id}/{editToken}"
+     */
+    completePaymentUrl: z
+      .url({ protocol: /^https?/ })
+      .refine((url) => url.includes("{id}"), { error: "completePaymentUrl must include {id}" })
+      .refine((url) => url.includes("{editToken}"), { error: "completePaymentUrl must include {editToken}" })
+      .optional(),
+
+    /** URL template for the admin main page. Used for emails. May contain `{lang}`.
+     *
+     * This is intended for custom frontends; the default is for the frontend included in the repo.
+     *
+     * @example "http://example.com/{lang}/admin"
+     */
+    adminUrl: z.url({ protocol: /^https?/ }).optional(),
+  }),
+);
+
+export type FrontendConfig = z.infer<typeof frontendsSchema>[string];
+export type FrontendsConfig = z.infer<typeof frontendsSchema> & { default: Required<FrontendConfig> };
+
 /** Validation schema for Stripe branding settings.
  *
  * It's a bit extreme to validate this with Zod, but it ensures payments shouldn't fail due to

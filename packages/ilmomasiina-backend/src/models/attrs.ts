@@ -33,6 +33,7 @@ export const adminEventGetEventAttrs: (keyof EventAttributes)[] = [
   ...eventGetEventAttrs,
   "draft",
   "listed",
+  "preferredFrontend",
   "verificationEmail",
   "updatedAt",
 ];

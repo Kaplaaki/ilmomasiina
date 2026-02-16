@@ -28,13 +28,17 @@ export function getStripe(): Stripe {
 }
 
 /** Create a Stripe Checkout Session for a Payment. */
-export async function createCheckoutSession(signup: Signup, payment: Payment): Promise<Stripe.Checkout.Session> {
+export async function createCheckoutSession(
+  signup: Signup,
+  payment: Payment,
+  frontend: string,
+): Promise<Stripe.Checkout.Session> {
   const stripe = getStripe();
 
   // TODO: This should come from the Payment to allow idempotent retries.
   const language = signup.language ?? config.defaultLanguage;
   const editToken = generateToken(signup.id);
-  const returnUrl = completePaymentUrl({ id: signup.id, editToken, lang: language });
+  const returnUrl = completePaymentUrl({ id: signup.id, editToken, lang: language, frontend });
 
   const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = payment.products.map((product) => ({
     price_data: {

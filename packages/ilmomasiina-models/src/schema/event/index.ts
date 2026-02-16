@@ -6,6 +6,7 @@ import { adminQuotaWithSignups, userQuotaWithSignups } from "../quotaWithSignups
 import { Nullable } from "../utils";
 import {
   adminDetailsOnlyCommonAttributes,
+  adminDetailsOnlyEventAttributes,
   adminEventLanguage,
   adminEventLanguages,
   adminOnlyEventAttributes,
@@ -45,6 +46,7 @@ const adminAttributes = Type.Interface(
     publicEventAttributes,
     publicCommonAttributes,
     adminOnlyEventAttributes,
+    adminDetailsOnlyEventAttributes,
     adminDetailsOnlyCommonAttributes,
     adminEventLanguages,
   ],

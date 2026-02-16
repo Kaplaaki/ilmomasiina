@@ -53,7 +53,7 @@ export function envString(name: string, defaultValue?: string | null) {
 export function envJson<T>(name: string, schema: ZodType<T>, defaultValue: T): T {
   const json = process.env[name];
   if (json === undefined) {
-    return defaultValue;
+    return schema.parse(defaultValue);
   }
   let parsedJson;
   try {

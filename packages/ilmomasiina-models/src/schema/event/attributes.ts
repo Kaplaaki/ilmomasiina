@@ -88,6 +88,14 @@ export const adminOnlyEventAttributes = Type.Object({
   }),
 });
 
+/** Event attributes that are only for admins, only in event details. */
+export const adminDetailsOnlyEventAttributes = Type.Object({
+  preferredFrontend: Type.String({
+    maxLength: 255,
+    description: "Preferred frontend instance for this event.",
+  }),
+});
+
 /** Attributes shared between events/languages that are public. */
 export const publicCommonAttributes = Type.Object({
   description: Nullable(Type.String(), {
