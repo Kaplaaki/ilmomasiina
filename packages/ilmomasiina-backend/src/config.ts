@@ -55,7 +55,9 @@ const baseUrl = envString("BASE_URL");
 // Fill in default values in frontend config
 const baseFrontends = envJson("FRONTENDS", frontendsSchema, {});
 const frontends: FrontendsConfig = {
+  ...baseFrontends,
   default: {
+    ...baseFrontends.default,
     eventDetailsUrl: baseFrontends.default?.eventDetailsUrl ?? `${baseUrl}/events/{slug}`,
     editSignupUrl: baseFrontends.default?.editSignupUrl ?? `${baseUrl}/signup/{id}/{editToken}`,
     completePaymentUrl: baseFrontends.default?.completePaymentUrl ?? `${baseUrl}/payment/{id}/{editToken}`,
@@ -137,7 +139,7 @@ const config = {
   baseUrl,
   /** Alternate frontend URL definitions as JSON. Used by the backend for emails, iCalendar exports, and payment links.
    *
-   * The first value in the array is used as the default when no frontend can be determined for the current operation.
+   * The "default" key is used when no frontend can be determined for the current operation.
    */
   frontends,
 

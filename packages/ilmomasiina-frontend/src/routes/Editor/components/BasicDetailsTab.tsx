@@ -214,6 +214,7 @@ const BasicDetailsTab = () => {
         <FieldRow
           name="preferredFrontend"
           label={t("editor.basic.preferredFrontend")}
+          help={t("editor.basic.preferredFrontend.info")}
           as={SelectBox}
           options={FRONTEND_NAMES.map((name) => [name, name] as [string, string])}
           formatError={formatError}

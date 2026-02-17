@@ -1,7 +1,14 @@
 import Stripe from "stripe";
 import z, { ZodType } from "zod";
 
-/** Validation schema for frontend URL configurations. */
+/** Validation schema for frontend URL configurations.
+ *
+ * The "default" frontend is always available, whether configured or not. Configurations using FRONTENDS should typically override it.
+ *
+ * If a URL is missing for a frontend, the template in the "default" frontend will be used.
+ *
+ * If a URL is missing for the "default" frontend, the default template based on BASE_URL will be used.
+ */
 export const frontendsSchema = z.record(
   z.string().min(1),
   z.strictObject({
