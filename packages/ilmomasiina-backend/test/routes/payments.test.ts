@@ -2,7 +2,7 @@ import moment from "moment";
 import { Op } from "sequelize";
 import Stripe from "stripe";
 import { testEvent, testSignups } from "test/testData";
-import { beforeAll, beforeEach, describe, expect, Mock, test, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, Mock, test, vi } from "vitest";
 
 import {
   ErrorCode,
@@ -13,6 +13,7 @@ import {
   SignupStatus,
 } from "@tietokilta/ilmomasiina-models";
 import config from "../../src/config";
+import { FrontendsConfig } from "../../src/configSchemas";
 import { Answer } from "../../src/models/answer";
 import { Payment } from "../../src/models/payment";
 import { Question } from "../../src/models/question";
@@ -1074,7 +1075,7 @@ describe("completePayment", () => {
     await payment!.reload();
     expect(payment!.status).toBe(PaymentStatus.PAID);
 
-    // Verify exactly one email was sent
+    // Verify no extra email was sent
     expect(emailSend).toHaveBeenCalledOnce();
   });
 
@@ -1387,5 +1388,154 @@ describe("pollPendingPayments", () => {
 describe("cleanupStaleCreatingPayments", () => {
   test.todo("cleans up stale CREATING payments", async () => {
     // TODO: Test background job that marks old CREATING payments as CREATION_FAILED
+  });
+});
+
+describe("preferredFrontend in payments", () => {
+  const altFrontend: FrontendsConfig[string] = {
+    eventDetailsUrl: "https://alt.example.com/events/{slug}",
+    editSignupUrl: "https://alt.example.com/signup/{id}/{editToken}",
+    completePaymentUrl: "https://alt.example.com/payment/{id}/{editToken}",
+    adminUrl: "https://alt.example.com/admin",
+  };
+
+  let originalFrontends: FrontendsConfig;
+
+  beforeEach(() => {
+    originalFrontends = { ...config.frontends };
+    // Temporarily add an alternative frontend
+    (config.frontends as FrontendsConfig).alt = altFrontend;
+  });
+
+  afterEach(() => {
+    // Restore original frontends config
+    delete (config.frontends as FrontendsConfig).alt;
+    Object.assign(config.frontends, originalFrontends);
+  });
+
+  test("startPayment uses preferredFrontend for Stripe callback URLs", async () => {
+    const { signup } = await defaultTestEventAndSignup();
+    // Set the event's preferredFrontend to the alternative
+    const quota = await signup.getQuota();
+    const event = await quota.getEvent();
+    await event.update({ preferredFrontend: "alt" });
+
+    const [data, response] = await api.startPayment(signup.id);
+    expect(response.statusCode).toBe(200);
+    expect(data.paymentUrl).toEqual(expect.stringContaining("https://checkout.stripe.test/pay/"));
+
+    // Verify Stripe was called with alt frontend URLs
+    expect(mockStripeCheckoutSessionCreate).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining<Partial<Stripe.Checkout.SessionCreateParams>>({
+        success_url: expect.stringContaining("https://alt.example.com/payment/"),
+        cancel_url: expect.stringContaining("https://alt.example.com/payment/"),
+      }),
+    );
+  });
+
+  test("startPayment uses default frontend URLs when preferredFrontend is default", async () => {
+    const { signup } = await defaultTestEventAndSignup();
+    // Ensure preferredFrontend is "default"
+    const quota = await signup.getQuota();
+    const event = await quota.getEvent();
+    await event.update({ preferredFrontend: "default" });
+
+    const [, response] = await api.startPayment(signup.id);
+    expect(response.statusCode).toBe(200);
+
+    // Verify Stripe was called with default frontend URLs (BASE_URL)
+    expect(mockStripeCheckoutSessionCreate).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining<Partial<Stripe.Checkout.SessionCreateParams>>({
+        success_url: expect.stringContaining(config.frontends.default.completePaymentUrl.split("{")[0]),
+        cancel_url: expect.stringContaining(config.frontends.default.completePaymentUrl.split("{")[0]),
+      }),
+    );
+  });
+
+  test("startPayment falls back to default for unknown frontend name", async () => {
+    const { signup } = await defaultTestEventAndSignup();
+    // Set preferredFrontend to a name that doesn't exist in config
+    const quota = await signup.getQuota();
+    const event = await quota.getEvent();
+    await event.update({ preferredFrontend: "nonexistent" });
+
+    const [, response] = await api.startPayment(signup.id);
+    expect(response.statusCode).toBe(200);
+
+    // Should fall back to default frontend URLs
+    expect(mockStripeCheckoutSessionCreate).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining<Partial<Stripe.Checkout.SessionCreateParams>>({
+        success_url: expect.stringContaining(config.frontends.default.completePaymentUrl.split("{")[0]),
+        cancel_url: expect.stringContaining(config.frontends.default.completePaymentUrl.split("{")[0]),
+      }),
+    );
+  });
+
+  test("completePayment sends email with preferredFrontend URL", async () => {
+    const { signup } = await defaultTestEventAndSignup();
+    const quota = await signup.getQuota();
+    const event = await quota.getEvent();
+    await event.update({ preferredFrontend: "alt" });
+
+    // Create a PENDING payment
+    await api.startPayment(signup.id);
+    const payment = await Payment.findOne({ where: { signupId: signup.id } });
+
+    // Mark the session as complete in Stripe
+    const session = mockCheckoutSessions.get(payment!.stripeCheckoutSessionId!);
+    session!.status = "complete";
+
+    // Complete the payment
+    const [, response] = await api.completePayment(signup.id);
+    expect(response.statusCode).toBe(200);
+
+    // Verify the email contains the alt frontend URL
+    expect(emailSend).toHaveBeenCalledExactlyOnceWith(
+      signup.email,
+      expect.any(String),
+      expect.stringContaining("https://alt.example.com/signup/"),
+    );
+  });
+
+  test("payment confirmation email uses preferredFrontend URL", async () => {
+    const { signup } = await defaultTestEventAndSignup();
+    const quota = await signup.getQuota();
+    const event = await quota.getEvent();
+    await event.update({ preferredFrontend: "alt" });
+
+    // Create a PENDING payment
+    await api.startPayment(signup.id);
+    const payment = await Payment.findOne({ where: { signupId: signup.id } });
+
+    // Simulate payment completion via webhook
+    await checkoutSessionStatusUpdated(payment!.stripeCheckoutSessionId!, "complete");
+
+    // Verify the email contains the alt frontend URL
+    expect(emailSend).toHaveBeenCalledExactlyOnceWith(
+      signup.email,
+      expect.any(String),
+      expect.stringContaining("https://alt.example.com/signup/"),
+    );
+  });
+
+  test("payment confirmation email falls back to default for unknown frontend name", async () => {
+    const { signup } = await defaultTestEventAndSignup();
+    const quota = await signup.getQuota();
+    const event = await quota.getEvent();
+    await event.update({ preferredFrontend: "nonexistent" });
+
+    // Create a PENDING payment
+    await api.startPayment(signup.id);
+    const payment = await Payment.findOne({ where: { signupId: signup.id } });
+
+    // Simulate payment completion via webhook
+    await checkoutSessionStatusUpdated(payment!.stripeCheckoutSessionId!, "complete");
+
+    // Should use default frontend URL, not contain "nonexistent"
+    expect(emailSend).toHaveBeenCalledExactlyOnceWith(
+      signup.email,
+      expect.any(String),
+      expect.stringContaining(config.frontends.default.editSignupUrl.split("{")[0]),
+    );
   });
 });

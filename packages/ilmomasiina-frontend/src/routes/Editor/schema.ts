@@ -54,8 +54,9 @@ const editorSchema: ZodType<EditorEvent> = z
     emailQuestion: z.boolean(),
     draft: z.boolean(),
     listed: z.boolean(),
+    preferredFrontend: z.string().max(255),
     verificationEmail: z.nullable(z.string()),
-    payments: z.nativeEnum(PaymentMode),
+    payments: z.enum(PaymentMode),
     languages: z.record(
       z.string(),
       z.object({

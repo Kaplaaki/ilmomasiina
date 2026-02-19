@@ -58,6 +58,7 @@ describe("GET /api/admin/events/:id", () => {
       emailQuestion: event.emailQuestion,
       verificationEmail: event.verificationEmail,
       payments: event.payments,
+      preferredFrontend: event.preferredFrontend,
       questions: expect.any(Array),
       quotas: expect.any(Array),
       defaultLanguage: event.defaultLanguage,

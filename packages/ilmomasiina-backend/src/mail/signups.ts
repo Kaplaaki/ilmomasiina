@@ -41,7 +41,7 @@ export const sendPromotedFromQueueMail = sendSynchronouslyInTest(async (signup: 
   const date = event.date && moment(event.date).tz(config.timezone).format(dateFormat);
 
   const editToken = generateToken(signup.id);
-  const cancelLink = editSignupUrl({ id: signup.id, editToken, lang });
+  const cancelLink = editSignupUrl({ id: signup.id, editToken, lang, frontend: event.preferredFrontend });
 
   const params: PromotedFromQueueMailParams = {
     event,
@@ -85,7 +85,7 @@ export const sendSignupConfirmationMail = sendSynchronouslyInTest(
     const date = event.date && moment(event.date).tz(config.timezone).format(dateFormat);
 
     const editToken = generateToken(signup.id);
-    const cancelLink = editSignupUrl({ id: signup.id, editToken, lang });
+    const cancelLink = editSignupUrl({ id: signup.id, editToken, lang, frontend: event.preferredFrontend });
 
     const params: ConfirmationMailParams = {
       name: fullName,
@@ -117,7 +117,7 @@ export const sendPaymentConfirmationMail = sendSynchronouslyInTest(async (paymen
   const { event } = quota;
 
   const editToken = generateToken(signup.id);
-  const cancelLink = editSignupUrl({ id: signup.id, editToken, lang });
+  const cancelLink = editSignupUrl({ id: signup.id, editToken, lang, frontend: event.preferredFrontend });
 
   const priceFormatter = new Intl.NumberFormat(i18n.t("currencyFormat.locale", { lng: lang }), {
     style: "currency",

@@ -210,6 +210,16 @@ const BasicDetailsTab = () => {
           formatError={formatError}
         />
       )}
+      {FRONTEND_NAMES.length > 1 && (
+        <FieldRow
+          name="preferredFrontend"
+          label={t("editor.basic.preferredFrontend")}
+          help={t("editor.basic.preferredFrontend.info")}
+          as={SelectBox}
+          options={FRONTEND_NAMES.map((name) => [name, name] as [string, string])}
+          formatError={formatError}
+        />
+      )}
       <FieldRow
         name="category"
         label={t("editor.basic.category")}

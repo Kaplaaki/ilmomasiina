@@ -37,6 +37,7 @@ export const defaultEvent = (): EditorEvent => ({
 
   draft: true,
   listed: true,
+  preferredFrontend: "default",
 
   updatedAt: "",
   moveSignupsToQueue: false,

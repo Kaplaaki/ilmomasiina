@@ -12,13 +12,19 @@
 
 - Removed support for MySQL databases; only PostgreSQL is supported from now on
 - Added payment support via Stripe
-  - Paid signups cannot be edited or deleted after payment (TODO: allow admins to still modify them)
+  - Paid signups cannot be edited or deleted by users after payment, unless the price does not change
   - Custom frontends should be updated to support payments if enabled
   - New error codes and locale strings related to payments
+- Removed support for the `EMAIL_BASE_URL` environment variable. Use `BASE_URL` and/or `FRONTENDS` instead.
+- Removed support for the `MAIL_DEFAULT_LANG` environment variable. Use `DEFAULT_LANGUAGE` instead.
+- Removed support for the `EVENT_DETAILS_URL`, `EDIT_SIGNUP_URL` and `ADMIN_URL`
+  environment variables. Use the new `FRONTENDS` system instead.
 - **ilmomasiina-models**: Removed database models (moved to `ilmomasiina-backend`).
 
 **Features:**
 
+- Proper support for multiple frontends
+  - Events can now specify a preferred frontend, and emails will use the correct URLs
 - **ilmomasiina-client:** Added payment support to EditSignup, including new state flags in context
 
 **Bug fixes and improvements:**

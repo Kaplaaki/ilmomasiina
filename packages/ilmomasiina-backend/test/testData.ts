@@ -65,6 +65,7 @@ export function testEventAttributes({
     emailQuestion: true,
     signupsPublic: false,
     payments: faker.helpers.arrayElement(Object.values(PaymentMode)),
+    preferredFrontend: "default",
     verificationEmail: faker.lorem.paragraphs({ min: 1, max: 5 }),
     defaultLanguage: "en",
     languages: {},

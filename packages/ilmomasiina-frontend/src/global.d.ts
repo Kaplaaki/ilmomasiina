@@ -21,3 +21,5 @@ declare const TIMEZONE: string;
 declare const DEFAULT_LANGUAGE: string;
 
 declare const CURRENCY: string;
+
+declare const FRONTEND_NAMES: string[];

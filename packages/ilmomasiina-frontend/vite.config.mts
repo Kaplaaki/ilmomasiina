@@ -28,8 +28,19 @@ const TIMEZONE = process.env.APP_TIMEZONE || "Europe/Helsinki";
  *
  * Therefore we need to quote string values, which is easiest done using JSON.stringify.
  */
-function quoteValues(values: Record<string, string | number | boolean>) {
+function quoteValues(values: Record<string, string | number | boolean | string[]>) {
   return Object.fromEntries(Object.entries(values).map(([key, value]) => [key, JSON.stringify(value)]));
+}
+
+/** Parses and lightly validates the FRONTENDS environment variable and returns an array of frontend names. */
+function parseFrontendNames(frontends: string): string[] {
+  const parsed = JSON.parse(frontends);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("FRONTENDS must be a JSON object");
+  }
+  const names = Object.keys(parsed);
+  if (!names.includes("default")) names.unshift("default");
+  return names;
 }
 
 export default defineConfig(({ mode }) => ({
@@ -81,6 +92,7 @@ export default defineConfig(({ mode }) => ({
     TIMEZONE,
     DEFAULT_LANGUAGE: process.env.DEFAULT_LANGUAGE || "fi",
     CURRENCY: process.env.CURRENCY || "EUR",
+    FRONTEND_NAMES: process.env.FRONTENDS ? parseFrontendNames(process.env.FRONTENDS) : ["default"],
   }),
 
   plugins: [
