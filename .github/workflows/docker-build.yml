@@ -18,30 +18,9 @@ on:
     branches: [main]
 
 jobs:
-  packagejson:
-    name: Check package.json versions
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out the repo
-        uses: actions/checkout@v4
-
-      - name: Check package.json versions against tag
-        run: |
-          errors=0
-          for file in package.json packages/*/package.json
-          do
-            if cat $file | jq '"v" + .version' | grep -Fqvx '"${{ github.ref_name }}"'
-            then
-              echo "::error file=$file::The version here does not match the Git tag you pushed (${{ github.ref_name }}). This would cause no NPM packages to be published."
-              errors=1
-            fi
-          done
-          exit $errors
-
   docker:
     name: Push Docker image to GitHub Packages
     # If you want to build on a branch instead of tags, remove packagejson from below (since there isn't a tag to check against).
-    needs: [packagejson]
     runs-on: ubuntu-latest
     permissions:
       packages: write
