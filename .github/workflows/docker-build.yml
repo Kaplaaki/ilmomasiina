@@ -21,7 +21,6 @@ jobs:
   packagejson:
     name: Check package.json versions
     runs-on: ubuntu-latest
-    if: github.ref_type == 'tag'
     steps:
       - name: Check out the repo
         uses: actions/checkout@v4
@@ -47,7 +46,7 @@ jobs:
     permissions:
       packages: write
       contents: read
-    if: github.repository == 'Kaplaaki/ilmomasiina' && github.ref == 'refs/heads/main'
+    if: github.repository == 'Kaplaaki/ilmomasiina' 
     steps:
       - name: Check out the repo
         uses: actions/checkout@v4
