@@ -5,7 +5,7 @@ env:
   docker_tag: "ghcr.io/kaplaaki/ilmomasiina"
 
   # Change these to customize your build.
-  branding_header_title_text: "Kaplaakin ilmokilke"
+  branding_header_title_text: "Kaplaakin ilmomasiina"
   branding_header_title_text_short: "Ilmomasiina"
   branding_footer_gdpr_text: "Tietosuoja"
   branding_footer_gdpr_link: "https://kaplaaki.fi/tietosuoja"
