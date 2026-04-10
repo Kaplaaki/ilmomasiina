@@ -2,15 +2,15 @@ name: Build & deploy
 
 env:
   # Change this to upload the built image to your own organization.
-  docker_tag: "ghcr.io/tietokilta/ilmomasiina"
+  docker_tag: "ghcr.io/kaplaaki/ilmomasiina"
 
   # Change these to customize your build.
   branding_header_title_text: "Kaplaakin ilmomasiina"
   branding_header_title_text_short: "Ilmomasiina"
   branding_footer_gdpr_text: "Tietosuoja"
   branding_footer_gdpr_link: "https://kaplaaki.fi/tietosuoja"
-  branding_footer_home_text: "Tietokilta.fi"
-  branding_footer_home_link: "https://tietokilta.fi"
+  branding_footer_home_text: "Kaplaaki.fi"
+  branding_footer_home_link: "https://kaplaaki.fi"
   branding_login_placeholder_email: "tiedottaja@kaplaaki.fi"
 
 on:
