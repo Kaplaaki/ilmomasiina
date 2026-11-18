@@ -29,6 +29,8 @@ const EventCard = ({ event, color }: Props) => {
   const stateText = useSignupStateText(row.signupState);
   const signupEnabled = row.signupState.state !== SignupState.disabled;
   const signupOpen = row.signupState.state === SignupState.open;
+  // Without dates there are no quotas yet, so there is nothing to count.
+  const showCount = signupEnabled && row.signupState.state !== SignupState.coming;
 
   const start = event.date ? new Date(event.date) : null;
   const end = event.endDate ? new Date(event.endDate) : null;
@@ -46,22 +48,24 @@ const EventCard = ({ event, color }: Props) => {
         ) : (
           <div className="ilmo--event-card-placeholder">{event.category || event.title.charAt(0)}</div>
         )}
-        {event.category && showImage && <span className="ilmo--event-card-category on-media">{event.category}</span>}
       </Link>
 
       <div className="ilmo--event-card-body">
-        {/* Always rendered, so cards without a signup keep the same height. */}
+        {/* Always rendered, so cards without a category or signup keep the same height. */}
         <div className="ilmo--event-card-eyebrow">
-          {signupEnabled && (
-            <>
-              <span className="ilmo--event-card-state">
-                {(stateText.fullLabel ?? stateText.shortLabel).replace(/\.$/, "")}
-              </span>
+          <div className="ilmo--event-card-eyebrow-row">
+            {event.category ? <span className="ilmo--event-card-category">{event.category}</span> : <span />}
+            {showCount && (
               <span className="ilmo--event-card-count" title={t("events.card.signups")}>
                 {totalSignupCount}
                 {totalQuotaSize ? ` / ${totalQuotaSize}` : ""}
               </span>
-            </>
+            )}
+          </div>
+          {signupEnabled && (
+            <span className="ilmo--event-card-state">
+              {(stateText.fullLabel ?? stateText.shortLabel).replace(/\.$/, "")}
+            </span>
           )}
         </div>
 
