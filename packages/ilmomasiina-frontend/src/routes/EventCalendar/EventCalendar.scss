@@ -2,7 +2,7 @@
 
 // Calendar: hairline grid on white; event chips are colored by category.
 
-$cal-nosignup: #d6dae0;
+$cal-nosignup: #c3cde3;
 
 .ilmo--cal-nav {
   display: flex;
@@ -26,7 +26,7 @@ h2.ilmo--cal-title {
   margin: 0 0.5rem;
   font-family: $font-family-serif;
   font-size: 1.6rem;
-  font-weight: 500;
+  font-weight: 700;
   letter-spacing: -0.015em;
   text-transform: capitalize;
   color: $headings-color;
@@ -110,7 +110,9 @@ h2.ilmo--cal-title {
   text-overflow: ellipsis;
   color: var(--cat-ink, #{$headings-color});
   background: var(--cat-tint, #{$secondary-background});
-  border-left: 3px solid var(--cat, #{$cal-nosignup});
+  // The pale tint barely shows on white, so browsers that support it get a stronger mix of the category color.
+  background: color-mix(in srgb, var(--cat, #{$cal-nosignup}) 24%, #fff);
+  border-left: 4px solid var(--cat, #{$cal-nosignup});
   border-radius: 4px;
 
   &:hover {
@@ -149,8 +151,12 @@ h2.ilmo--cal-title {
     width: 0.6rem;
     height: 0.6rem;
     margin-right: 0.6rem;
-    border-radius: 50%;
     background: var(--cat, #{$cal-nosignup});
+  }
+
+  // Explains why some chips are faded. It has no color dot of its own.
+  .ilmo--cal-legend-faded::before {
+    display: none;
   }
 }
 

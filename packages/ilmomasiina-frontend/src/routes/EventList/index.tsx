@@ -16,6 +16,7 @@ import { ErrorCode, UserEventListItem } from "@tietokilta/ilmomasiina-models";
 import { TKey } from "../../i18n";
 import paths from "../../paths";
 import { buildCategoryColors } from "../../utils/categoryColor";
+import eventEnded from "../../utils/eventEnded";
 import EventCard from "./components/EventCard";
 import ViewControls from "./components/ViewControls";
 
@@ -38,7 +39,10 @@ const EventListView = ({ category }: EventListProps) => {
       closed: [],
       noSignup: [],
     };
+    const now = new Date();
     (events ?? []).forEach((event) => {
+      // Events that have ended are left out of this view. They are still in the list and calendar views.
+      if (eventEnded(event, now)) return;
       switch (signupState(event.registrationStartDate, event.registrationEndDate, event.signupComing).state) {
         case SignupState.open:
           groups.open.push(event);
