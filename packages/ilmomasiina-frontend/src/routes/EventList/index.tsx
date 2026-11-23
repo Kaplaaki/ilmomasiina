@@ -64,6 +64,12 @@ const EventListView = ({ category }: EventListProps) => {
           }
       }
     });
+    // Upcoming signups go by when they open, or by the event's own date if the opening isn't known yet.
+    const comingKey = (event: UserEventListItem) => {
+      const when = event.registrationStartDate ?? event.date;
+      return when ? new Date(when).getTime() : Infinity;
+    };
+    groups.coming.sort((a, b) => comingKey(a) - comingKey(b));
     const all: Section[] = [
       { key: "open", title: "events.section.open", events: groups.open },
       { key: "coming", title: "events.section.coming", events: groups.coming },
