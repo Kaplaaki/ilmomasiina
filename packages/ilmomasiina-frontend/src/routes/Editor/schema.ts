@@ -148,6 +148,16 @@ const editorSchema: ZodType<EditorEvent> = z
         path: ["signupLink"],
       });
     }
+    // With an external signup the signup dates are optional, but both or neither must be given.
+    if (event.eventType === EditorEventType.ONLY_EVENT && event.signupLink?.trim()) {
+      if (!event.registrationStartDate !== !event.registrationEndDate) {
+        ctx.addIssue({
+          code: "custom",
+          message: "editor.errors.signupDatesBoth",
+          path: [event.registrationStartDate ? "registrationEndDate" : "registrationStartDate"],
+        });
+      }
+    }
     if (event.date && event.endDate && event.endDate < event.date) {
       ctx.addIssue({
         code: "custom",

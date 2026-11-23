@@ -50,7 +50,8 @@ export function eventType(event: AdminEventResponse): EditorEventType {
   if (event.date === null) {
     return EditorEventType.ONLY_SIGNUP;
   }
-  if (event.registrationStartDate === null) {
+  // Events with signup elsewhere may have signup dates too, but are still just events here.
+  if (event.registrationStartDate === null || event.signupLink) {
     return EditorEventType.ONLY_EVENT;
   }
   return EditorEventType.EVENT_WITH_SIGNUP;
@@ -99,6 +100,11 @@ export const serverEventToEditor = (event: AdminEventResponse): EditorEvent => (
   moveSignupsToQueue: false,
 });
 
+const hasSignupDates = (form: EditorEvent) =>
+  form.eventType === EditorEventType.EVENT_WITH_SIGNUP ||
+  form.eventType === EditorEventType.ONLY_SIGNUP ||
+  !!form.signupLink?.trim();
+
 export const editorEventToServer = (form: EditorEvent): ConvertedEditorEvent => ({
   ...form,
   // Blank image URL means no image.
@@ -110,10 +116,9 @@ export const editorEventToServer = (form: EditorEvent): ConvertedEditorEvent => 
   // Drop dates if the chosen event type doesn't involve them.
   date: form.eventType === EditorEventType.ONLY_SIGNUP ? null : (form.date?.toISOString() ?? null),
   endDate: form.eventType === EditorEventType.ONLY_SIGNUP ? null : (form.endDate?.toISOString() ?? null),
-  registrationStartDate:
-    form.eventType === EditorEventType.ONLY_EVENT ? null : (form.registrationStartDate?.toISOString() ?? null),
-  registrationEndDate:
-    form.eventType === EditorEventType.ONLY_EVENT ? null : (form.registrationEndDate?.toISOString() ?? null),
+  // Signup dates are kept for events without signup here only if they have an external signup link.
+  registrationStartDate: hasSignupDates(form) ? (form.registrationStartDate?.toISOString() ?? null) : null,
+  registrationEndDate: hasSignupDates(form) ? (form.registrationEndDate?.toISOString() ?? null) : null,
   // Set open quota size to zero if an open quota is not used.
   openQuotaSize: form.useOpenQuota && form.openQuotaSize ? form.openQuotaSize : 0,
   // Drop prices from quotas and questions if payments are not used, and replace null prices with 0.

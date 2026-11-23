@@ -28,7 +28,7 @@ const ListingRow = ({ event, categoryColor }: { event: UserEventListItem; catego
   const row = useMemo(() => eventToRows(event, { compact: true })[0] as EventRow, [event]);
   const stateText = useSignupStateText(row.signupState);
   const signupEnabled = row.signupState.state !== SignupState.disabled;
-  const showCount = signupEnabled && row.signupState.state !== SignupState.coming;
+  const showCount = signupEnabled && row.signupState.state !== SignupState.coming && !event.signupLink;
 
   const start = event.date ? new Date(event.date) : null;
   const end = event.endDate ? new Date(event.endDate) : null;

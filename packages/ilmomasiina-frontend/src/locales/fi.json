@@ -158,6 +158,8 @@
     "editor.errors.tooSmall": "Arvon tulee olla vähintään {{minimum}}",
     "editor.errors.tooLarge": "Arvon tulee olla enintään {{maximum}}",
     "editor.errors.invalidSlug": "URL-osoitteessa voi käyttää vain merkkejä A-Z, a-z, 0-9, - ja _",
+    "editor.errors.signupDatesBoth": "Anna ilmoittautumisen alku ja loppu tai jätä molemmat tyhjiksi",
+    "editor.basic.signupLink.dates": "Valinnainen. Näyttää, milloin ilmoittautuminen alkaa ja päättyy. Jätä tyhjäksi, jos aikaa ei ole.",
     "editor.errors.invalidSignupLink": "Kirjoita verkko-osoite (https://...) tai sähköpostiosoite",
     "editor.errors.dateInverted": "Tapahtuma ei voi päättyä ennen kuin se alkaa",
     "editor.errors.registrationDateInverted": "Ilmoittautuminen ei voi päättyä ennen kuin se alkaa",

@@ -33,7 +33,7 @@ const EventCard = ({ event, color }: Props) => {
   // Signup handled on another site or by email.
   const externalSignup = !signupEnabled && !!signupLinkHref(event.signupLink);
   // Without dates there are no quotas yet, so there is nothing to count.
-  const showCount = signupEnabled && row.signupState.state !== SignupState.coming;
+  const showCount = signupEnabled && row.signupState.state !== SignupState.coming && !event.signupLink;
 
   const start = event.date ? new Date(event.date) : null;
   const end = event.endDate ? new Date(event.endDate) : null;
