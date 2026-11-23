@@ -90,6 +90,7 @@ const BasicDetailsTab = () => {
   const endDate = useFieldValue<Date | null>("endDate");
   const registrationStartDate = useFieldValue<Date | null>("registrationStartDate");
   const registrationEndDate = useFieldValue<Date | null>("registrationEndDate");
+  const signupLink = useFieldValue<string | null>("signupLink");
 
   // Only the fixed categories can be picked. An older event's own category stays selectable so editing it doesn't lose it.
   const category = useFieldValue<string>("category");
@@ -168,6 +169,29 @@ const BasicDetailsTab = () => {
           help={t("editor.basic.signupLink.info")}
           formatError={formatError}
         />
+      )}
+      {eventType === EditorEventType.ONLY_EVENT && signupLink?.trim() && (
+        <>
+          <FieldRow
+            name="registrationStartDate"
+            id="registrationStartDate"
+            as={DateTimePicker}
+            selectsStart
+            endDate={registrationEndDate}
+            label={t("editor.basic.registrationStartDate")}
+            help={t("editor.basic.signupLink.dates")}
+            formatError={formatError}
+          />
+          <FieldRow
+            name="registrationEndDate"
+            id="registrationEndDate"
+            as={DateTimePicker}
+            selectsEnd
+            startDate={registrationStartDate}
+            label={t("editor.basic.registrationEndDate")}
+            formatError={formatError}
+          />
+        </>
       )}
       {eventType !== EditorEventType.ONLY_SIGNUP && (
         <FieldRow

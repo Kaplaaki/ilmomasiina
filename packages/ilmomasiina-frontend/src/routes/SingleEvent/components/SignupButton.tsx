@@ -64,21 +64,25 @@ const SignupButton = ({ isOpen, isClosed, seconds, total }: SignupButtonProps) =
   const statusText = useSignupStateText(eventState);
 
   // Events whose signup is handled elsewhere link there instead of showing a signup state.
-  const externalHref = eventState.state === SignupState.disabled ? signupLinkHref(event!.signupLink) : null;
+  // With signup dates, the link is only shown while the signup is open.
+  const externalHref = eventState.state === SignupState.coming ? null : signupLinkHref(event!.signupLink);
   if (externalHref) {
+    const hasDates = eventState.state !== SignupState.disabled;
     return (
       <div className="ilmo--side-widget">
         <h3>{t("singleEvent.signupButtons.title")}</h3>
-        <p>{t("singleEvent.signupLink.info")}</p>
-        <Button
-          as="a"
-          variant="primary"
-          className="ilmo--signup-button"
-          href={externalHref}
-          {...(externalHref.startsWith("mailto:") ? {} : { target: "_blank", rel: "noopener noreferrer" })}
-        >
-          {externalHref.startsWith("mailto:") ? t("singleEvent.signupLink.email") : t("singleEvent.signupLink.web")}
-        </Button>
+        <p>{hasDates ? statusText.shortLabel : t("singleEvent.signupLink.info")}</p>
+        {(!hasDates || isOpen) && (
+          <Button
+            as="a"
+            variant="primary"
+            className="ilmo--signup-button"
+            href={externalHref}
+            {...(externalHref.startsWith("mailto:") ? {} : { target: "_blank", rel: "noopener noreferrer" })}
+          >
+            {externalHref.startsWith("mailto:") ? t("singleEvent.signupLink.email") : t("singleEvent.signupLink.web")}
+          </Button>
+        )}
       </div>
     );
   }

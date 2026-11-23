@@ -158,6 +158,8 @@
     "editor.errors.tooSmall": "The value must be at least {{minimum}}",
     "editor.errors.tooLarge": "The value must be at most {{maximum}}",
     "editor.errors.invalidSlug": "Only the characters A-Z, a-z, 0-9, - and _ are allowed",
+    "editor.errors.signupDatesBoth": "Enter both the signup start and end, or leave both empty",
+    "editor.basic.signupLink.dates": "Optional. Shows when the signup opens and closes. Leave empty if there is no set time.",
     "editor.errors.invalidSignupLink": "Enter a web address (https://...) or an email address",
     "editor.errors.dateInverted": "The event cannot end before it starts",
     "editor.errors.registrationDateInverted": "The signup cannot close before it opens",
