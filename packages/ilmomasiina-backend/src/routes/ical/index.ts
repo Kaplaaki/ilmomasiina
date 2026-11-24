@@ -78,21 +78,23 @@ export async function eventsAsICal({ category }: { category?: string } = {}) {
 export async function sendICalFeed(
   request: FastifyRequest<{ Querystring: { category?: string } }>,
   reply: FastifyReply,
-): Promise<void> {
+): Promise<string> {
   const category = typeof request.query?.category === "string" ? request.query.category : undefined;
   const cal = await eventsAsICal({ category });
 
   reply.status(200);
   reply.type("text/calendar; charset=utf-8");
   reply.header("Cache-Control", CACHE_CONTROL);
-  reply.send(cal);
+  // Return the body instead of calling reply.send(): with an async handler, the compression plugin
+  // would otherwise cut the stream short and clients that accept gzip (like iPhones) got an empty file.
+  return cal;
 }
 
 /** Download a single event as an .ics file, for "Add to calendar" buttons. */
 export async function sendEventICal(
   request: FastifyRequest<{ Params: { slug: string } }>,
   reply: FastifyReply,
-): Promise<void> {
+): Promise<string> {
   const { slug } = request.params;
   // Unlisted events are accessible by direct link, just like on the event page. The "user" scope hides drafts.
   const event = await Event.scope("user").findOne({
@@ -104,5 +106,5 @@ export async function sendEventICal(
   reply.type("text/calendar; charset=utf-8");
   reply.header("Content-Disposition", `attachment; filename="${event.slug}.ics"`);
   reply.header("Cache-Control", CACHE_CONTROL);
-  reply.send(renderICal([event]));
+  return renderICal([event]);
 }
